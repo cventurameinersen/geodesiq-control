@@ -208,7 +208,6 @@ __marimo__/
 
 # uv files
 uv.lock
-pyproject.toml
 
 # JupyterLab
 .jupyterlab

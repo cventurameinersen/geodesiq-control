@@ -1,0 +1,35 @@
+[project]
+name = "geodesiq"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "numpy>=2.0.2",
+    "scipy>=1.16.2",
+]
+
+[project.optional-dependencies]
+plot = ["matplotlib>=3.9.4"]
+docs = ["sphinx>=8"]
+
+[dependency-groups]
+dev = [
+    "ipykernel==6.29.5", # pinned to avoid problem with ipywidgets
+    "ipympl>=0.9.8",
+    "joblib>=1.5.2",
+    "jupyterlab>=4.5.5",
+    "jupyterlab-execute-time>=3.2.0",
+    "line-profiler>=5.0.0",
+    "qutip>=5.0.4",
+    "scienceplots>=2.1.1",
+    "theme-darcula>=4.0.0",
+    "tqdm>=4.67.1",
+    "varname>=0.15.0",
+]
+bench = [
+  "pytest-benchmark>=5",
+]
+
+[tool.uv]
+package = true
