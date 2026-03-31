@@ -24,19 +24,22 @@ class PulseControl:
         self.ham = kwargs.get("ham")
         self.partial_ham = kwargs.get("partial_ham")
         
-        if not callable(self.H):
-            raise ValueError("PulseControl requires a callable Hamiltonian function 'H'.")
+        if not callable(self.ham):
+            raise ValueError("PulseControl requires a callable Hamiltonian function 'ham'.")
         
         # PulseControl parameters
         self.control_name = kwargs.get("control_name")
         self.initial = kwargs.get("initial")
         self.final = kwargs.get("final")
+        self.pulse_accuracy = kwargs.get("pulse_accuracy", 1000) # Setting 1000 as default
 
         self.initial_state = kwargs.get("initial_state")
         self.final_state = kwargs.get("final_state")
 
         self.alpha = kwargs.get("alpha")
         self.beta = kwargs.get("beta")
+        self.dia_alpha = kwargs.get("dia_alpha")
+        self.dia_beta = kwargs.get("dia_beta")
 
         # Internally used variables
         self._eigenvalues = None
@@ -47,27 +50,66 @@ class PulseControl:
         self._filtered_pulse = None
         self._pulse_times = None
 
+
+
         
+    def summary(self):
+        print("\n ------------------ PulseControl Summary ------------------ \n")
+        print(f" Control Name: {self.control_name}")
+        print(f" Initial Control Value: {self.initial}")
+        print(f" Final Control Value: {self.final}")
+        print(f" Initial State Index: {self.initial_state}")
+        print(f" Final State Index: {self.final_state}")
+        print(f" Alpha (Adiabatic): {self.alpha}")
+        print(f" Beta (Adiabatic): {self.beta}")
+        print(f" Alpha (Diabatic): {self.dia_alpha}")
+        print(f" Beta (Diabatic): {self.dia_beta}")
+        print("\n ---------------------------------------------------------- \n")
 
 
-
-    def _generate_hyperarrays(self) -> Tuple[np.ndarray, np.ndarray]:
+    def _generate_ham_arrays(self) -> Tuple[np.ndarray, np.ndarray]:
         """
         Compute the hamiltonian and partial hamiltonian for all control values.
         If partial_hamiltonian is not callable, then the partial hamiltonian is computed numerically.
 
         Parameters
         ----------
-        
+        No external parameters needed.
 
         Returns
         -------
+        hamiltonians: np.ndarray
+            Array of shape (pulse_accuracy, dim, dim) containing the Hamiltonian matrices for each control value.
+        partial_hamiltonians: np.ndarray
+            Array of shape (pulse_accuracy, dim, dim) containing the partial Hamiltonian matrices for each control value.
 
         """
-        def _numerical_partial_hamiltonian(ham: np.ndarray) -> np.ndarray:
-            pass
+        def _numerical_partial_hamiltonian(control_value: float) -> np.ndarray:
+            # Numerical differentiation using a 5-point stencil method for better accuracy.
+            scale = np.abs(control_value) if control_value != 0 else 1.0
+            delta = (np.finfo(float).eps)**(1/5) * max(scale, 1.0) 
+            
+            h1 = self.ham(control_value - 2*delta)
+            h2 = self.ham(control_value - delta)
+            h3 = self.ham(control_value + delta)
+            h4 = self.ham(control_value + 2*delta)
 
-        pass
+            return (-h4 + 8*h3 - 8*h2 + h1) / (12 * delta)
+
+
+        if self.ham is None:
+            raise ValueError("[geodesiq] Hamiltonian function is currently not defined.")
+        
+
+        control_values = np.linspace(self.initial, self.final, self.pulse_accuracy)
+        hamiltonians = np.array([self.ham(control_value) for control_value in control_values])
+
+        if callable(self.partial_ham):
+            partial_hamiltonians = np.array([self.partial_ham(control_value) for control_value in control_values])
+        else:
+            partial_hamiltonians = np.array([_numerical_partial_hamiltonian(control_value) for control_value in control_values])
+
+        return hamiltonians, partial_hamiltonians
 
 
 
@@ -78,14 +120,31 @@ class PulseControl:
 
         Parameters
         ----------
-        
+        No external parameters needed.
 
         Returns
         -------
+        matrix_elements: np.ndarray
+            Array of shape (pulse_accuracy, dim, dim) containing the transition matrix elements for each control value.
+        energy_gaps: np.ndarray
+            Array of shape (pulse_accuracy, dim) containing the energy gaps for each control value.
 
         """
-        
-        pass
+        hamiltonians, partial_hamiltonians = self._generate_ham_arrays()
+
+        energies, eigenvectors = np.linalg.eigh(hamiltonians)
+        self._eigenvalues = energies
+
+        energy_gaps = np.diff(energies, axis=1)
+        matrix_elements = np.einsum('...ij,...jk,...kl->...il', 
+                                    eigenvectors.conj().transpose(0, 2, 1), 
+                                    partial_hamiltonians, 
+                                    eigenvectors)
+
+        self._energy_gaps = energy_gaps
+        self._matrix_elements = matrix_elements
+
+        return matrix_elements, energy_gaps
 
 
 
@@ -108,7 +167,7 @@ class PulseControl:
 
 
 
-    def generate_geometric_params(self) -> np.ndarray:
+    def _generate_geometric_params(self) -> np.ndarray:
         """
         Compute the relevant quantum metric and the necessary boundary condition parameter for the solving of the ODE.
 
@@ -201,10 +260,10 @@ class PulseControl:
         t, pulse = self._pulse_times, self._pulse
 
         if filename is None:
-            raise ValueError("geodesiq: Missing filename for saving.")
+            raise ValueError("[geodesiq] Missing filename for saving.")
         
         if os.path.exists(filename) and not overwrite:
-            raise FileExistsError(f"geodesiq: File already exists (choose overwrite=True to remove safety check.): {filename}")
+            raise FileExistsError(f"[geodesiq] File already exists (choose overwrite=True to remove safety check.): {filename}")
     
 
         df = pd.DataFrame({"t": t, "pulse": pulse})
