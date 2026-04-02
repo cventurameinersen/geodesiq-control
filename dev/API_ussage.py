@@ -25,9 +25,9 @@ def partial_H(lam, x):
 # 3. Create a control problem
 # ============================================
 
-problem = gq.Problem(H_landau_zener, partial_H=partial_H)
+problem = gq.Hamiltonian(H_landau_zener, partial_H_func=partial_H)
 problem.set_parameters(x=1.0)
-problem.set_control(name="lam", initial=-10.0, final=+10.0, initial_state=0, final_state=1, alpha=4,
+problem.set_control(name="lam", pulse_initial=-10.0, pulse_final=+10.0, initial_state=0, final_state=1, alpha=4,
                     beta=2)  # initial eigenstate to transfer adiabatically
 problem.solve_problem()  # <--- The calculation (heavy work) is done here.
 

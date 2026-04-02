@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "numpy>=2.0.2",
+    "pandas>=3.0.2",
     "scipy>=1.16.2",
 ]
 
@@ -22,13 +23,14 @@ dev = [
     "jupyterlab-execute-time>=3.2.0",
     "line-profiler>=5.0.0",
     "qutip>=5.0.4",
-    "scienceplots>=2.1.1",
     "theme-darcula>=4.0.0",
     "tqdm>=4.67.1",
     "varname>=0.15.0",
+    "scipy-stubs>=1.17.1.3",
+    "pytest>=7.3.1",
 ]
 bench = [
-  "pytest-benchmark>=5",
+    "pytest-benchmark>=5",
 ]
 
 [tool.uv]
