@@ -16,7 +16,7 @@ pip install geodesiq
 ```
 
 # Example code
-Here is an example code based on the two-level Landau-Zener problem $H[z(t)]=z(t)\,\sigma_z+x\, \sigma_x$ with control parameter $z(t)$. To compute the optimal pulse, you establish the base Hamiltonian and (optionally) the partial derivative of the Hamiltonian with respect to the control parameter.
+Here is an example code based on the two-level Landau-Zener problem $H[z(t)]=z(t)\sigma_z+x \sigma_x$ with control parameter $z(t)$. To compute the optimal pulse, you establish the base Hamiltonian and (optionally) the partial derivative of the Hamiltonian with respect to the control parameter.
 
 ```python
 import numpy as np
