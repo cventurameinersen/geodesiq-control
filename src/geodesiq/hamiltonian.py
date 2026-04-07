@@ -5,7 +5,7 @@ from scipy.integrate import solve_ivp, romb
 from scipy.interpolate import interp1d
 from scipy.differentiate import jacobian
 
-from .pulses.pulse_solver import PulseControl
+from .pulses import PulseControl
 from .utils import Flags
 
 
