@@ -42,8 +42,43 @@ class PulseControl:
         self._pulse_kwargs = pulse_kwargs
 
 
-    def __call__():
-        pass
+
+
+    def __call__(self):
+        """
+        Call the appropriate pulse processing method based on stored arguments.
+        Uses _pulse_args[0] as the method name and remaining args/kwargs as parameters.
+        
+        Returns
+        -------
+        output: Any
+            Result from the called method.
+            
+        Raises
+        ------
+        ValueError
+            If no method is specified or if the method name is not recognized.
+        """
+        if not self._pulse_args:
+            raise ValueError("[geodesiq] No method specified in pulse_args.")
+        
+        method_name = self._pulse_args[0]
+        remaining_args = self._pulse_args[1:]
+        
+        # Map method names to actual methods
+        methods = {
+            'discretized': self._discretized_pulse,
+            'fourier': self._fourier_spectrum,
+            'filter': self._filter_pulse,
+            'plot': self._plot_pulse,
+            'export': self._export_pulse,
+        }
+        
+        if method_name not in methods:
+            raise ValueError(f"[geodesiq] Unknown method: {method_name}. Available methods: {list(methods.keys())}")
+        
+        method = methods[method_name]
+        return method(*remaining_args, **self._pulse_kwargs)
 
 
 
@@ -184,9 +219,9 @@ class PulseControl:
 
 
 
-    def _export_csv(self, filename: str = None, overwrite: bool = False) -> str:
+    def _export_pulse(self, filename: str = None, overwrite: bool = False) -> str:
         """
-        Export pulse data to a CSV file.
+        Export pulse data to a txt file.
 
         Parameters
         ----------
