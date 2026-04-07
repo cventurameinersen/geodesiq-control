@@ -21,8 +21,6 @@ Here is an example code based on the two-level Landau-Zener problem $H[z(t)]=z(t
 
 ```
 import numpy as np
-import matplotlib.pyplot as plt
-
 from geodesiq import Hamiltonian
 
 # ----- Define Hamiltonian and its gradient -----
@@ -44,7 +42,8 @@ z0 = -10
 zf = -z0
 
 hamiltonian.set_parameters(x=x)
-hamiltonian.set_control(control_name='z', pulse_initial=z0, pulse_final=zf, initial_state=0, alpha=alpha, beta=beta)
+hamiltonian.set_control(control_name='z', pulse_initial=z0, pulse_final=zf,
+                        initial_state=0, alpha=alpha, beta=beta)
 
 # ----- Solve for optimal pulse -----
 hamiltonian.solve_problem()
