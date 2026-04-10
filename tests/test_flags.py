@@ -1,5 +1,5 @@
 import pytest
-from geodesiq.utils import Flags
+from geodesiq._utils import Flags
 
 
 # ---------------------------------------------------------------------------
