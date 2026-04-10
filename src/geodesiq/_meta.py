@@ -1,0 +1,3 @@
+PACKAGE_NAME = "geodesiq"
+__version__ = "0.1.0"
+__author__ = "Christian Ventura Meinersen & David Fernandez Fernandez"
