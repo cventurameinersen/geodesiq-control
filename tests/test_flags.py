@@ -48,6 +48,19 @@ class TestAdd:
         with pytest.raises(KeyError, match="does not exist"):
             f.add("B", parent="A")
 
+    def test_add_flag_with_multiple_parents(self):
+        f = Flags()
+        f.add("A", value=True)
+        f.add("B", value=True)
+        f.add("C", value=True, parents=["A", "B"])
+        assert f["C"] is True
+
+    def test_add_with_parent_and_parents_raises(self):
+        f = Flags()
+        f.add("A", value=True)
+        with pytest.raises(ValueError, match="either 'parent' or 'parents'"):
+            f.add("B", value=True, parent="A", parents=["A"])
+
 
 # ---------------------------------------------------------------------------
 # get() / __getitem__
@@ -141,6 +154,26 @@ class TestPropagation:
         f["root"] = False
         assert f["child_a"] is False
         assert f["child_b"] is False
+
+    def test_any_parent_false_propagates_to_multi_parent_child(self):
+        f = Flags()
+        f.add("A", value=True)
+        f.add("B", value=True)
+        f.add("C", value=True, parents=["A", "B"])
+
+        f["A"] = False
+        assert f["C"] is False
+
+    def test_multi_parent_propagates_to_descendants(self):
+        f = Flags()
+        f.add("A", value=True)
+        f.add("B", value=True)
+        f.add("C", value=True, parents=["A", "B"])
+        f.add("D", value=True, parent="C")
+
+        f["B"] = False
+        assert f["C"] is False
+        assert f["D"] is False
 
 
 # ---------------------------------------------------------------------------
