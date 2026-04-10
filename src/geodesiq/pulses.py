@@ -1,17 +1,16 @@
-from typing import Optional, Tuple, Dict, Any, Union
 import os
-
-import numpy as np
-import scipy as sp
-from scipy.interpolate import interp1d
+from typing import Tuple, Any
 
 import matplotlib.pyplot as plt
-from matplotlib.figure import Figure
+import numpy as np
+import scipy as sp
 from matplotlib.axes import Axes
+from matplotlib.figure import Figure
+from scipy.interpolate import interp1d
 
-
-
-
+from ._meta import PACKAGE_NAME
+from .exceptions import MissingArgsError, ValidationError, IOErrorGeodesiQ
+from .warnings import NumericalStabilityWarning
 
 
 class PulseControl:
@@ -41,9 +40,6 @@ class PulseControl:
         self._pulse_args = pulse_args
         self._pulse_kwargs = pulse_kwargs
 
-
-
-
     def __call__(self):
         """
         Call the appropriate pulse processing method based on stored arguments.
@@ -56,33 +52,27 @@ class PulseControl:
             
         Raises
         ------
-        ValueError
-            If no method is specified or if the method name is not recognized.
+        MissingArgsError
+            If no method is specified
+        ValidationError
+            If the method name is not recognized
         """
         if not self._pulse_args:
-            raise ValueError("[geodesiq] No method specified in pulse_args.")
-        
+            raise MissingArgsError("No method specified in pulse_args.")
+
         method_name = self._pulse_args[0]
         remaining_args = self._pulse_args[1:]
-        
+
         # Map method names to actual methods
-        methods = {
-            'discretized': self._discretized_pulse,
-            'fourier': self._fourier_spectrum,
-            'filter': self._filter_pulse,
-            'plot': self._plot_pulse,
-            'export': self._export_pulse,
-        }
-        
+        methods = {'discretized': self._discretized_pulse, 'fourier': self._fourier_spectrum,
+                   'filter': self._filter_pulse, 'plot': self._plot_pulse, 'export': self._export_pulse, }
+
         if method_name not in methods:
-            raise ValueError(f"[geodesiq] Unknown method: {method_name}. Available methods: {list(methods.keys())}")
-        
+            raise ValidationError(f"Unknown method: {method_name}. Available methods: {list(methods.keys())}")
+
         method = methods[method_name]
         return method(*remaining_args, **self._pulse_kwargs)
 
-
-
-    
     def _discretized_pulse(self, linear_steps: int = 4) -> Tuple[np.ndarray, np.ndarray]:
         """
         Obtains the piecewise linear function from control pulse.
@@ -102,15 +92,12 @@ class PulseControl:
         
         """
 
-        piecewise_linear = interp1d(self._pulse_times, self._pulse, kind='linear', fill_value="extrapolate")  
+        piecewise_linear = interp1d(self._pulse_times, self._pulse, kind='linear', fill_value="extrapolate")
 
         new_s = np.linspace(self._pulse_times[0], self._pulse_times[-1], linear_steps)
         approx_sol = piecewise_linear(new_s)
-        
+
         return new_s, approx_sol
-
-
-
 
     def _fourier_spectrum(self) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -127,21 +114,17 @@ class PulseControl:
 
         # Compute the sampling rate from the rescaled time array
         dt = np.mean(np.diff(self._pulse_times))
-        
+
         # Compute FFT of the pulse and corresponding frequencies
         fft_values = np.fft.fft(self._pulse)
         freqs = np.fft.fftfreq(len(self._pulse), dt)
-        
+
         # Get only positive frequencies and their magnitudes
         positive_freq_idx = freqs >= 0
         frequencies = freqs[positive_freq_idx]
         magnitude = np.abs(fft_values[positive_freq_idx])
-        
-        
+
         return frequencies, magnitude
-
-
-
 
     def _filter_pulse(self, cutoff_freq: float = 1e9, filter_order: int = 3) -> np.ndarray:
         """
@@ -165,15 +148,16 @@ class PulseControl:
         dt = np.mean(np.diff(self._pulse_times))
         sampling_rate = 1.0 / dt
         nyquist_freq = sampling_rate / 2.0
-        
+
         # Normalize the cutoff frequency to the Nyquist frequency
         normalized_cutoff = cutoff_freq / nyquist_freq
-        
+
         # Ensure the normalized cutoff frequency is within valid range
         if normalized_cutoff >= 1.0:
-            print(f"[geodesiq] Warning: Normalized cutoff frequency {normalized_cutoff:.2f} is too high. Setting to 0.99 to avoid instability.")
             normalized_cutoff = 0.99
-        
+            raise NumericalStabilityWarning(
+                f"Normalized cutoff frequency {normalized_cutoff:.2} is too high. Setting to 0.99 to avoid instability.")
+
         # Design Butterworth filter coefficients
         b, a = sp.signal.butter(filter_order, normalized_cutoff, btype='low')
 
@@ -181,9 +165,6 @@ class PulseControl:
         filtered_pulse = sp.signal.filtfilt(b, a, self._pulse)
 
         return filtered_pulse
-
-
-
 
     def _plot_pulse(self, show: bool = True, **plot_kwargs) -> Tuple[Figure, Axes]:
         """
@@ -214,10 +195,6 @@ class PulseControl:
             plt.show()
 
         return fig, ax
-    
-
-
-
 
     def _export_pulse(self, filename: str = None, overwrite: bool = False) -> str:
         """
@@ -239,15 +216,14 @@ class PulseControl:
         t, pulse = self._pulse_times, self._pulse
 
         if filename is None:
-            raise ValueError("[geodesiq] Missing filename for saving.")
-        
+            raise MissingArgsError("Missing filename for saving.")
+
         if os.path.exists(filename) and not overwrite:
-            raise FileExistsError(f"[geodesiq] File already exists (choose overwrite=True to remove safety check.): {filename}")
-    
+            raise IOErrorGeodesiQ(f"File already exists (choose overwrite=True to remove safety check.): {filename}")
 
         data = np.column_stack((t, pulse))
         np.savetxt(filename, data, delimiter=",", header="t,pulse", comments="", fmt="%.8f")
 
-        print(f"[geodesiq] File {filename} saved.")
+        print(f"[{PACKAGE_NAME}] File {filename} saved.")
 
         return filename

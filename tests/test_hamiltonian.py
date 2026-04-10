@@ -1,7 +1,8 @@
-import pytest
 import numpy as np
+import pytest
 
-from geodesiq import Hamiltonian
+from geodesiq import Hamiltonian, InvalidControlParameterError, ImmutableConfigurationError, \
+    MissingControlParameterError
 
 
 # ---------------------------------------------------------------------------
@@ -68,35 +69,35 @@ class TestInit:
 
 class TestSetterValidation:
     def test_control_name_rejects_non_string(self, bare_ham):
-        with pytest.raises(ValueError, match="string"):
+        with pytest.raises(InvalidControlParameterError, match="string"):
             bare_ham.control_name = 42
 
     def test_pulse_initial_rejects_non_number(self, bare_ham):
-        with pytest.raises(ValueError, match="number"):
+        with pytest.raises(InvalidControlParameterError, match="number"):
             bare_ham.pulse_initial = "abc"
 
     def test_pulse_final_rejects_non_number(self, bare_ham):
-        with pytest.raises(ValueError, match="number"):
+        with pytest.raises(InvalidControlParameterError, match="number"):
             bare_ham.pulse_final = [1, 2]
 
     def test_initial_state_rejects_non_int(self, bare_ham):
-        with pytest.raises(ValueError, match="integer"):
+        with pytest.raises(InvalidControlParameterError, match="integer"):
             bare_ham.initial_state = 1.5
 
     def test_alpha_rejects_non_number(self, bare_ham):
-        with pytest.raises(ValueError, match="number"):
+        with pytest.raises(InvalidControlParameterError, match="number"):
             bare_ham.alpha = "two"
 
     def test_beta_rejects_non_number(self, bare_ham):
-        with pytest.raises(ValueError, match="number"):
+        with pytest.raises(InvalidControlParameterError, match="number"):
             bare_ham.beta = "two"
 
     def test_num_steps_rejects_non_positive(self, bare_ham):
-        with pytest.raises(ValueError, match="positive integer"):
+        with pytest.raises(InvalidControlParameterError, match="positive integer"):
             bare_ham.num_steps = -5
 
     def test_num_steps_rejects_float(self, bare_ham):
-        with pytest.raises(ValueError, match="positive integer"):
+        with pytest.raises(InvalidControlParameterError, match="positive integer"):
             bare_ham.num_steps = 3.5
 
 
@@ -106,11 +107,11 @@ class TestSetterValidation:
 
 class TestFuncImmutability:
     def test_H_func_cannot_be_overwritten(self, bare_ham):
-        with pytest.raises(ValueError, match="already set"):
+        with pytest.raises(ImmutableConfigurationError, match="already set"):
             bare_ham.H_func = lambda lam: np.eye(2)
 
     def test_partial_H_func_cannot_be_overwritten(self, ham_with_partial):
-        with pytest.raises(ValueError, match="already set"):
+        with pytest.raises(ImmutableConfigurationError, match="already set"):
             ham_with_partial.partial_H_func = lambda lam: np.eye(2)
 
     def test_partial_H_func_can_be_set_once_if_missing(self, bare_ham):
@@ -169,12 +170,12 @@ class TestSetControl:
 
 class TestCheckControlParameters:
     def test_missing_all_raises(self, bare_ham):
-        with pytest.raises(ValueError, match="Missing control"):
+        with pytest.raises(MissingControlParameterError, match="Missing control"):
             bare_ham._check_control_parameters()
 
     def test_missing_single_param_mentioned(self, bare_ham):
         bare_ham.set_control(control_name="lam", pulse_initial=-1.0, pulse_final=1.0, initial_state=0, beta=2.0)
-        with pytest.raises(ValueError, match="alpha"):
+        with pytest.raises(MissingControlParameterError, match="alpha"):
             bare_ham._check_control_parameters()
 
     def test_no_error_when_all_set(self, configured_ham):
@@ -382,7 +383,7 @@ class TestControlSolMonotonicity:
 
 class TestSolveProblemErrors:
     def test_solve_problem_raises_without_control(self, bare_ham):
-        with pytest.raises(ValueError, match="Missing control"):
+        with pytest.raises(MissingControlParameterError, match="Missing control"):
             bare_ham.solve_problem()
 
 

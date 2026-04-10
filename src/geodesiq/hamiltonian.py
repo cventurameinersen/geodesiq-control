@@ -1,12 +1,13 @@
 from typing import Optional, Callable, Any
 
 import numpy as np
+from scipy.differentiate import jacobian
 from scipy.integrate import solve_ivp, romb
 from scipy.interpolate import interp1d
-from scipy.differentiate import jacobian
 
+from ._utils import Flags
+from .exceptions import ImmutableConfigurationError, MissingControlParameterError, InvalidControlParameterError
 from .pulses import PulseControl
-from .utils import Flags
 
 
 class Hamiltonian:
@@ -83,8 +84,8 @@ class Hamiltonian:
         if self._H_func is None:
             self._H_func = func
         else:
-            raise ValueError("H_func is already set and cannot be changed. If you want to change it,"
-                             " please create a new instance of the Hamiltonian class.")
+            raise ImmutableConfigurationError("H_func is already set and cannot be changed. If you want to change it,"
+                                              " please create a new instance of the Hamiltonian class.")
 
     @property
     def partial_H_func(self):
@@ -97,8 +98,9 @@ class Hamiltonian:
             self._flag_numerical_partial_H = False  # Update the numerical partial flag
             self._flags['eigenproblem_solved'] = False  # Reset the eigenproblem solved flag
         else:
-            raise ValueError("partial_H_func is already set and cannot be changed. If you want to change it,"
-                             " please create a new instance of the Hamiltonian class.")
+            raise ImmutableConfigurationError(
+                "partial_H_func is already set and cannot be changed. If you want to change it,"
+                " please create a new instance of the Hamiltonian class.")
 
     @property
     def control_name(self):
@@ -109,7 +111,7 @@ class Hamiltonian:
         if name is None:  # Keep the previous value
             return
         if not isinstance(name, str):
-            raise ValueError("Control name must be a string.")
+            raise InvalidControlParameterError("Control name must be a string.")
         self._control_name = name
         self._flags['eigenproblem_solved'] = False  # Reset the eigenproblem solved flag if the control name changes
 
@@ -123,7 +125,7 @@ class Hamiltonian:
             return
 
         if not isinstance(value, (int, float)):
-            raise ValueError("Pulse initial value must be a number.")
+            raise InvalidControlParameterError("Pulse initial value must be a number.")
         self._pulse_initial = value
         self._flags[
             'eigenproblem_solved'] = False  # Reset the eigenproblem solved flag if the pulse initial value changes
@@ -138,7 +140,7 @@ class Hamiltonian:
             return
 
         if not isinstance(value, (int, float)):
-            raise ValueError("Pulse final value must be a number.")
+            raise InvalidControlParameterError("Pulse final value must be a number.")
         self._pulse_final = value
         self._flags[
             'eigenproblem_solved'] = False  # Reset the eigenproblem solved flag if the pulse final value changes
@@ -153,7 +155,7 @@ class Hamiltonian:
             return
 
         if not isinstance(value, int):
-            raise ValueError("Initial state index must be an integer.")
+            raise InvalidControlParameterError("Initial state index must be an integer.")
         self._initial_state = value
         self._flags['metric_computed'] = False  # Reset the  metric computed flag if the initial state index changes
 
@@ -167,7 +169,7 @@ class Hamiltonian:
             return
 
         if not isinstance(value, (int, float)):
-            raise ValueError("Alpha must be a number.")
+            raise InvalidControlParameterError("Alpha must be a number.")
         self._alpha = value
         self._flags['metric_computed'] = False  # Reset the metric computed flag if alpha changes
 
@@ -181,7 +183,7 @@ class Hamiltonian:
             return
 
         if not isinstance(value, (int, float)):
-            raise ValueError("Beta must be a number.")
+            raise InvalidControlParameterError("Beta must be a number.")
         self._beta = value
         self._flags['metric_computed'] = False  # Reset the metric computed flag if beta changes
 
@@ -195,7 +197,7 @@ class Hamiltonian:
             return
 
         if not isinstance(value, int) or value <= 0:
-            raise ValueError("Number of steps must be a positive integer.")
+            raise InvalidControlParameterError("Number of steps must be a positive integer.")
         self._num_steps = value
         self._flags['eigenproblem_solved'] = False  # Reset the eigenproblem solved flag if the number of steps changes
 
@@ -459,7 +461,7 @@ class Hamiltonian:
     def _check_control_parameters(self):
         """
         Check if all necessary control _parameters are set before solving the problem. If any parameter is missing,
-        raise a ValueError with a clear message indicating which _parameters are missing and how to set them.
+        raise a ConfigurationError with a clear message indicating which _parameters are missing and how to set them.
         """
         missing_params = []
 
@@ -478,8 +480,9 @@ class Hamiltonian:
 
         if missing_params:
             missing_msg = ", ".join(missing_params)
-            raise ValueError(f"Missing control _parameters: {missing_msg}. Please set them using set_control"
-                             f"({', '.join(f'{name}=<...>' for name in missing_params)}).")
+            raise MissingControlParameterError(
+                f"Missing control _parameters: {missing_msg}. Please set them using set_control"
+                f"({', '.join(f'{name}=<...>' for name in missing_params)}).")
 
     def _generate_summary(self) -> str:
         """
