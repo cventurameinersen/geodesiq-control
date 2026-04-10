@@ -1,1 +1,1 @@
-from geodesiq.pulses.pulse_solver import PulseControl
+from geodesiq.pulses import PulseControl
