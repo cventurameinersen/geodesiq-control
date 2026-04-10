@@ -211,3 +211,6 @@ uv.lock
 
 # JupyterLab
 .jupyterlab
+
+# MacOS
+.DS_Store
