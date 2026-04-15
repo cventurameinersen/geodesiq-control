@@ -1,5 +1,5 @@
 import os
-from typing import Tuple, Any, Optional
+from typing import Tuple, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -83,6 +83,16 @@ class PulseControl:
         return method(*self._pulse_args, **self._pulse_kwargs)
 
 
+
+
+
+
+
+
+
+# ------------------------------------------------------------
+#               Methods of PulseControl class
+# ------------------------------------------------------------
 
 
 
@@ -177,7 +187,7 @@ class PulseControl:
         # Apply the filter to the pulse using filtfilt for zero-phase filtering
         filtered_pulse = sp.signal.filtfilt(b, a, self._pulse)
 
-        return filtered_pulse
+        return self._pulse_times, filtered_pulse
 
     def plot_pulse(self, show: bool = True, **plot_kwargs) -> Tuple[Figure, Axes]:
         """
