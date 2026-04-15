@@ -19,7 +19,8 @@ class PulseControl:
     The class allows for the synthesis of the pulse, filtering, and plotting of the pulse shape and its Fourier spectrum.
     """
 
-    def __init__(self, pulse: np.ndarray, duration: float, method: str = None, *pulse_args: Any, **pulse_kwargs: Any):
+    def __init__(self, pulse: np.ndarray, duration: float, method: Optional[str] = None, 
+                 pulse_args: Optional[tuple] = None, pulse_kwargs: Optional[dict] = None):
         """
         Initialize the PulseControl object with the control pulse and the rescaled time array as inputs.
 
@@ -29,7 +30,7 @@ class PulseControl:
             Rescaled time array (s = t/t_f) for the pulse.
         pulse: np.ndarray
             Control pulse values corresponding to the rescaled time array.
-        duration: float
+        duration: floatí
             Duration of the control pulse (t_f).
         pulse_args: tuple
             Positional arguments for the pulse synthesis (e.g., duration, filter parameters).
@@ -42,8 +43,8 @@ class PulseControl:
         self._duration = duration
         self._pulse_times = duration * np.linspace(0, 1, len(pulse))  # Rescaled time array corresponding to the pulse values 
         self._method = method
-        self._pulse_args = pulse_args
-        self._pulse_kwargs = pulse_kwargs
+        self._pulse_args = pulse_args if pulse_args is not None else ()
+        self._pulse_kwargs = pulse_kwargs if pulse_kwargs is not None else {}
 
 
 
@@ -68,8 +69,8 @@ class PulseControl:
             return self # Return object if no specific method was given
 
 
-        if not self._pulse_args:
-            raise MissingArgsError("No pulse arguments specified.")
+        # if not self._pulse_args:
+        #     raise MissingArgsError("No pulse arguments specified.")
 
         # Map method names to actual methods
         methods = {'discretized': self.discretized_pulse, 'fourier': self.fourier_spectrum,
@@ -167,8 +168,8 @@ class PulseControl:
         # Ensure the normalized cutoff frequency is within valid range
         if normalized_cutoff >= 1.0:
             normalized_cutoff = 0.99
-            raise NumericalStabilityWarning(
-                f"Normalized cutoff frequency {normalized_cutoff:.2} is too high. Setting to 0.99 to avoid instability.")
+            # raise NumericalStabilityWarning(
+            #     f"Normalized cutoff frequency {normalized_cutoff:.2} is too high. Setting to 0.99 to avoid instability.")
 
         # Design Butterworth filter coefficients
         b, a = sp.signal.butter(filter_order, normalized_cutoff, btype='low')
@@ -198,13 +199,15 @@ class PulseControl:
 
         t, pulse = self._pulse_times, self._pulse
 
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(5,3))
         ax.plot(t, pulse, **plot_kwargs)
-        ax.set_xlabel('Rescaled Time $t/t_f$')
+        ax.set_xlabel('Time $t$')
         ax.set_ylabel('Control Pulse')
 
         if show:
             plt.show()
+        else:
+            plt.close(fig)
 
         return fig, ax
 

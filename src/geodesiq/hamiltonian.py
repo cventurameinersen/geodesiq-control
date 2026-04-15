@@ -455,7 +455,7 @@ class Hamiltonian:
         """
         self.solve_problem()
         self._pulse = PulseControl(self._control_sol, duration, method, pulse_args, pulse_kwargs)  # ToDo: Use the actual Pulse class instead of a placeholder
-        return self._pulse
+        return self._pulse()
 
     def _check_control_parameters(self):
         """
