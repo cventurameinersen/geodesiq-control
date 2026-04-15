@@ -1,5 +1,5 @@
 import os
-from typing import Tuple, Any
+from typing import Tuple, Any, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -19,7 +19,7 @@ class PulseControl:
     The class allows for the synthesis of the pulse, filtering, and plotting of the pulse shape and its Fourier spectrum.
     """
 
-    def __init__(self, s: np.ndarray, pulse: np.ndarray, *pulse_args: Any, **pulse_kwargs: Any):
+    def __init__(self, pulse: np.ndarray, duration: float, method: str = None, *pulse_args: Any, **pulse_kwargs: Any):
         """
         Initialize the PulseControl object with the control pulse and the rescaled time array as inputs.
 
@@ -29,21 +29,27 @@ class PulseControl:
             Rescaled time array (s = t/t_f) for the pulse.
         pulse: np.ndarray
             Control pulse values corresponding to the rescaled time array.
+        duration: float
+            Duration of the control pulse (t_f).
         pulse_args: tuple
             Positional arguments for the pulse synthesis (e.g., duration, filter parameters).
         pulse_kwargs: dict
             Keyword arguments for the pulse synthesis (e.g., duration, filter parameters).
         """
 
-        self._pulse_times = s
+        
         self._pulse = pulse
+        self._duration = duration
+        self._pulse_times = duration * np.linspace(0, 1, len(pulse))  # Rescaled time array corresponding to the pulse values 
+        self._method = method
         self._pulse_args = pulse_args
         self._pulse_kwargs = pulse_kwargs
+
+
 
     def __call__(self):
         """
         Call the appropriate pulse processing method based on stored arguments.
-        Uses _pulse_args[0] as the method name and remaining args/kwargs as parameters.
         
         Returns
         -------
@@ -57,23 +63,29 @@ class PulseControl:
         ValidationError
             If the method name is not recognized
         """
-        if not self._pulse_args:
-            raise MissingArgsError("No method specified in pulse_args.")
 
-        method_name = self._pulse_args[0]
-        remaining_args = self._pulse_args[1:]
+        if self._method is None:
+            return self # Return object if no specific method was given
+
+
+        if not self._pulse_args:
+            raise MissingArgsError("No pulse arguments specified.")
 
         # Map method names to actual methods
-        methods = {'discretized': self._discretized_pulse, 'fourier': self._fourier_spectrum,
-                   'filter': self._filter_pulse, 'plot': self._plot_pulse, 'export': self._export_pulse, }
+        methods = {'discretized': self.discretized_pulse, 'fourier': self.fourier_spectrum,
+                   'filtered': self.filtered_pulse, 'plot': self.plot_pulse, 'export': self.export_pulse, }
 
-        if method_name not in methods:
-            raise ValidationError(f"Unknown method: {method_name}. Available methods: {list(methods.keys())}")
+        if self._method not in methods:
+            raise ValidationError(f"Unknown method: {self._method}. Available methods: {list(methods.keys())}")
 
-        method = methods[method_name]
-        return method(*remaining_args, **self._pulse_kwargs)
+        method = methods[self._method]
+        return method(*self._pulse_args, **self._pulse_kwargs)
 
-    def _discretized_pulse(self, linear_steps: int = 4) -> Tuple[np.ndarray, np.ndarray]:
+
+
+
+
+    def discretized_pulse(self, linear_steps: int = 4) -> Tuple[np.ndarray, np.ndarray]:
         """
         Obtains the piecewise linear function from control pulse.
         
@@ -99,7 +111,7 @@ class PulseControl:
 
         return new_s, approx_sol
 
-    def _fourier_spectrum(self) -> Tuple[np.ndarray, np.ndarray]:
+    def fourier_spectrum(self) -> Tuple[np.ndarray, np.ndarray]:
         """
         Compute the Fourier spectrum of the control pulse.
 
@@ -126,7 +138,7 @@ class PulseControl:
 
         return frequencies, magnitude
 
-    def _filter_pulse(self, cutoff_freq: float = 1e9, filter_order: int = 3) -> np.ndarray:
+    def filtered_pulse(self, cutoff_freq: float = 1e9, filter_order: int = 3) -> np.ndarray:
         """
         Apply a low-pass Butterworth filter to the control pulse.
 
@@ -166,9 +178,9 @@ class PulseControl:
 
         return filtered_pulse
 
-    def _plot_pulse(self, show: bool = True, **plot_kwargs) -> Tuple[Figure, Axes]:
+    def plot_pulse(self, show: bool = True, **plot_kwargs) -> Tuple[Figure, Axes]:
         """
-        Plot the (rescaled) control pulse.
+        Plot the (real-time) control pulse.
 
         Parameters
         ----------
@@ -196,9 +208,9 @@ class PulseControl:
 
         return fig, ax
 
-    def _export_pulse(self, filename: str = None, overwrite: bool = False) -> str:
+    def export_pulse(self, filename: str = None, overwrite: bool = False) -> str:
         """
-        Export pulse data to a txt file.
+        Export (real-time) pulse data to a txt file.
 
         Parameters
         ----------

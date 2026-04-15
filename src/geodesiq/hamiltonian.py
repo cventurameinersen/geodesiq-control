@@ -433,8 +433,8 @@ class Hamiltonian:
         self._control_sol = sol.y[0]
         self._flags['ode_solved'] = True
 
-    def synthesize_pulse(self, duration: float, kwargs_filter: Optional[dict] = None,
-                         convoluted_array: Optional[np.ndarray] = None):
+    def synthesize_pulse(self, duration: float, method: str = None, 
+                         pulse_args: Optional[tuple] = None, pulse_kwargs: Optional[dict] = None):
         """
         Synthesize the control pulse based on the solution of the optimization problem. If the problem has not been
         solved yet, this method will automatically solve it first.
@@ -454,8 +454,7 @@ class Hamiltonian:
              An instance of the PulseControl class representing the synthesized control pulse.
         """
         self.solve_problem()
-        self._pulse = PulseControl(self._s,
-                                   self._control_sol)  # ToDo: Use the actual Pulse class instead of a placeholder
+        self._pulse = PulseControl(self._control_sol, duration, method, pulse_args, pulse_kwargs)  # ToDo: Use the actual Pulse class instead of a placeholder
         return self._pulse
 
     def _check_control_parameters(self):
