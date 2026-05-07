@@ -30,7 +30,7 @@ class PulseControl:
             Rescaled time array (s = t/t_f) for the pulse.
         pulse: np.ndarray
             Control pulse values corresponding to the rescaled time array.
-        duration: floatí
+        duration: float
             Duration of the control pulse (t_f).
         pulse_args: tuple
             Positional arguments for the pulse synthesis (e.g., duration, filter parameters).
@@ -149,7 +149,7 @@ class PulseControl:
 
         return frequencies, magnitude
 
-    def filtered_pulse(self, cutoff_freq: float = 1e9, filter_order: int = 3) -> np.ndarray:
+    def filtered_pulse(self, cutoff_freq: float = 1e9, filter_order: int = 3) -> Tuple[np.ndarray, np.ndarray]:
         """
         Apply a low-pass Butterworth filter to the control pulse.
 
@@ -221,14 +221,16 @@ class PulseControl:
 
         return fig, ax
 
-    def export_pulse(self, filename: str = None, overwrite: bool = False) -> str:
+    def export_pulse(self, filename: str = None, data_type: str = 'npy', overwrite: bool = False) -> str:
         """
-        Export (real-time) pulse data to a txt file.
+        Export (real-time) pulse data to a (npy, txt) file.
 
         Parameters
         ----------
         filename: str
             Name for the data file saved.
+        data_type: str
+            Data type the pulse should be stored in (ie. '.txt', '.npy')
         overwrite: bool
             Ensures accidental overwrites.
 
@@ -240,15 +242,23 @@ class PulseControl:
 
         t, pulse = self._pulse_times, self._pulse
 
+        # Checking whether filename is given and whether it is already saved as such
         if filename is None:
             raise MissingArgsError("Missing filename for saving.")
 
-        if os.path.exists(filename) and not overwrite:
-            raise IOErrorGeodesiQ(f"File already exists (choose overwrite=True to remove safety check.): {filename}")
+        filename_string = filename + "." + data_type
+        if os.path.exists(filename_string) and not overwrite:
+            raise IOErrorGeodesiQ(f"File already exists (choose overwrite=True to remove safety check.): {filename_string}")
+        
+        # Save data depending on users preference
+        if data_type == 'npy':
+            data = {"t": t, "pulse": pulse}
+            np.save(filename, data)
+        elif data_type == 'txt':
+            data = np.column_stack((t, pulse))
+            np.savetxt(filename, data, delimiter=",", header="t,pulse", comments="", fmt="%.8f")
+        else:
+            raise MissingArgsError(f"Unsupported data_type '{data_type}'. Supported types are: 'npy' and 'txt'. ")
 
-        data = np.column_stack((t, pulse))
-        np.savetxt(filename, data, delimiter=",", header="t,pulse", comments="", fmt="%.8f")
+        print(f"[{PACKAGE_NAME}] File saved as '{filename}.{data_type}' type.")
 
-        print(f"[{PACKAGE_NAME}] File {filename} saved.")
-
-        return filename
