@@ -587,7 +587,7 @@ class Hamiltonian:
              An instance of the PulseControl class representing the synthesized control pulse.
         """
         self.solve_problem()
-        self._pulse = PulseControl(self._s, self._control_sol, duration, method, pulse_args,
+        self._pulse = PulseControl(self._control_sol, duration, method, pulse_args,
                                    pulse_kwargs)  # ToDo: Use the actual Pulse class instead of a placeholder
         return self._pulse()
 
