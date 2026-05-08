@@ -18,6 +18,15 @@ def lz_partial(lam, delta=1.0):
     return np.array([[1.0, 0.0], [0.0, -1.0]])
 
 
+def _get_pyplot():
+    """Lazy matplotlib import so plotting tests can be skipped when optional dependency is missing."""
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    return plt
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -261,6 +270,41 @@ class TestSolveProblem:
 
 
 # ---------------------------------------------------------------------------
+# eigenenergies / control_pulse properties
+# ---------------------------------------------------------------------------
+
+class TestEigenGetters:
+    def test_eigenenergies_property_triggers_eigenproblem_solve(self, configured_ham):
+        assert configured_ham._flags["eigenproblem_solved"] is False
+
+        energies = configured_ham.eigenenergies
+
+        assert energies is not None
+        assert configured_ham._flags["eigenproblem_solved"] is True
+        assert energies.shape[0] == configured_ham.num_steps
+
+    def test_control_pulse_property_triggers_eigenproblem_solve(self, configured_ham):
+        assert configured_ham._flags["eigenproblem_solved"] is False
+
+        pulse = configured_ham.control_pulse
+
+        assert pulse is not None
+        assert configured_ham._flags["eigenproblem_solved"] is True
+        np.testing.assert_allclose(
+            pulse,
+            np.linspace(configured_ham.pulse_initial, configured_ham.pulse_final, configured_ham.num_steps),
+        )
+
+    def test_eigenenergies_property_raises_when_eigensystem_controls_missing(self, bare_ham):
+        with pytest.raises(MissingControlParameterError, match="eigensystem"):
+            _ = bare_ham.eigenenergies
+
+    def test_control_pulse_property_raises_when_eigensystem_controls_missing(self, bare_ham):
+        with pytest.raises(MissingControlParameterError, match="eigensystem"):
+            _ = bare_ham.control_pulse
+
+
+# ---------------------------------------------------------------------------
 # Property setters – None keeps previous value
 # ---------------------------------------------------------------------------
 
@@ -375,6 +419,79 @@ class TestControlSolMonotonicity:
         configured_ham.solve_problem()
         diffs = np.diff(configured_ham._control_sol)
         assert np.all(diffs >= -1e-8)
+
+
+# ---------------------------------------------------------------------------
+# plot_eigenvalues
+# ---------------------------------------------------------------------------
+
+class TestPlotEigenvalues:
+    def test_plot_eigenvalues_creates_figure_and_lines(self, configured_ham):
+        plt = _get_pyplot()
+        fig, ax = configured_ham.plot_eigenvalues()
+
+        assert fig is not None
+        assert ax is not None
+        assert len(ax.lines) == 2
+
+        plt.close(fig)
+
+    def test_plot_eigenvalues_uses_user_figure_axis_and_kwargs(self, configured_ham):
+        plt = _get_pyplot()
+        fig, ax = plt.subplots()
+
+        out_fig, out_ax = configured_ham.plot_eigenvalues(fig=fig, ax=ax, linestyle="--", color="black")
+
+        assert out_fig is fig
+        assert out_ax is ax
+        assert all(line.get_linestyle() == "--" for line in ax.lines)
+        assert all(line.get_color() == "black" for line in ax.lines)
+
+        plt.close(fig)
+
+    def test_plot_eigenvalues_allows_custom_axis_labels_and_title(self, configured_ham):
+        plt = _get_pyplot()
+        fig, ax = configured_ham.plot_eigenvalues(xlabel="lambda", ylabel="Eigenenergy", title="Spectrum")
+
+        assert ax.get_xlabel() == "lambda"
+        assert ax.get_ylabel() == "Eigenenergy"
+        assert ax.get_title() == "Spectrum"
+
+        plt.close(fig)
+
+    def test_plot_eigenvalues_keeps_default_labels_when_not_overridden(self, configured_ham):
+        plt = _get_pyplot()
+        fig, ax = configured_ham.plot_eigenvalues()
+
+        assert ax.get_xlabel() == configured_ham.control_name
+        assert ax.get_ylabel() == "Energy"
+        assert ax.get_title() == "Hamiltonian Eigenvalues"
+
+        plt.close(fig)
+
+    def test_plot_eigenvalues_reuses_cached_calculation(self, bare_ham, monkeypatch):
+        _get_pyplot()
+        bare_ham.set_parameters(delta=0.5)
+        bare_ham.set_control(control_name="lam", pulse_initial=-5.0, pulse_final=5.0, initial_state=0, alpha=2.0,
+                             beta=2.0, num_steps=33)
+
+        call_counter = {"count": 0}
+        original_eigh = np.linalg.eigh
+
+        def counting_eigh(*args, **kwargs):
+            call_counter["count"] += 1
+            return original_eigh(*args, **kwargs)
+
+        monkeypatch.setattr(np.linalg, "eigh", counting_eigh)
+
+        fig1, _ = bare_ham.plot_eigenvalues()
+        fig2, _ = bare_ham.plot_eigenvalues()
+
+        assert call_counter["count"] == 1
+
+        plt = _get_pyplot()
+        plt.close(fig1)
+        plt.close(fig2)
 
 
 # ---------------------------------------------------------------------------

@@ -316,6 +316,26 @@ class Hamiltonian:
             self.solve_problem()  # Attempt to solve the pulse if not already solved
             return self._pulse
 
+    @property
+    def eigenenergies(self):
+        """Return Hamiltonian eigenenergies, solving the eigenproblem if needed."""
+        if self._flags['eigenproblem_solved']:
+            return self._energies
+
+        self._check_eigensystem_parameters()
+        self._solve_eigenproblem()
+        return self._energies
+
+    @property
+    def control_pulse(self):
+        """Return the control-parameter grid, solving the eigenproblem if needed."""
+        if self._flags['eigenproblem_solved']:
+            return self._control_pulse
+
+        self._check_eigensystem_parameters()
+        self._solve_eigenproblem()
+        return self._control_pulse
+
     def set_parameters(self, **params):
         """
         Set the _parameters for the Hamiltonian. This method allows you to specify any _parameters that are needed to
@@ -399,8 +419,6 @@ class Hamiltonian:
         """
         self._check_control_parameters()
 
-        self._control_pulse = np.linspace(self.pulse_initial, self.pulse_final, num=self.num_steps)
-
         self._solve_eigenproblem()
         self._compute_metric_tensor()
 
@@ -418,7 +436,7 @@ class Hamiltonian:
         if self._flags['dia_list_computed']:
             return  # If the diabatic passage list is already computed, skip the computation
 
-        dim = self._energies.shape[1]  # Get the dimension of the Hamiltonian from the energies array
+        dim = self.eigenenergies.shape[1]  # Get the dimension of the Hamiltonian from the energies array
         self._dia_list = build_diab(initial_state=self.initial_state, final_state=self.final_state, dim=dim)
         self._flags['dia_list_computed'] = True  # Mark the diabatic passage list as computed to avoid recomputation
 
@@ -426,8 +444,11 @@ class Hamiltonian:
         """
         Solve the eigenproblem for the Hamiltonian at each control value to obtain the energies and matrix elements.
         This method is called internally by solve_problem() if the eigenproblem has not been solved yet. The results are
-        stored in self._energies and self._matrix_elements for later use in computing the metric tensor.
+        stored in self.eigenenergies and self._matrix_elements for later use in computing the metric tensor.
         """
+
+        self._control_pulse = np.linspace(self.pulse_initial, self.pulse_final, num=self.num_steps)
+
         if self._flags['eigenproblem_solved']:
             return  # If the eigenproblem is already solved, skip the computation
 
@@ -470,7 +491,7 @@ class Hamiltonian:
         self._flags['metric_computed'] = True  # Mark the metric as computed to avoid recomputation
 
     def _compute_G_diabatic(self):
-        num, dim = np.shape(self._energies)
+        num, dim = np.shape(self.eigenenergies)
 
         counter_n = 0
         counter_m = 0
@@ -483,7 +504,7 @@ class Hamiltonian:
                     ad_idx = self._dia_list[m][n]
 
                     numerator = self._matrix_elements[:, m, n]
-                    denominator = np.abs(self._energies[:, n] - self._energies[:, m])
+                    denominator = np.abs(self.eigenenergies[:, n] - self.eigenenergies[:, m])
 
                     diad_tensor[:, counter_n, counter_m] = np.heaviside(ad_idx, 1) * (
                             ad_idx * (numerator ** self.beta / (denominator ** self.alpha)) + (1 - ad_idx) * (
@@ -502,13 +523,13 @@ class Hamiltonian:
         of the
         """
 
-        num, dim = np.shape(self._energies)
+        num, dim = np.shape(self.eigenenergies)
         counter = 0  # Temp variable to save the number of G_tensor computed
         G_tensor = np.zeros([num, dim - 1])
         for i in range(dim):
             if i != self.initial_state:
                 numerator = self._matrix_elements[:, self.initial_state, i]
-                denominator = np.abs(self._energies[:, i] - self._energies[:, self.initial_state])
+                denominator = np.abs(self.eigenenergies[:, i] - self.eigenenergies[:, self.initial_state])
                 G_tensor[:, counter] = numerator ** self.beta / (denominator ** self.alpha)
 
                 counter += 1
@@ -566,7 +587,77 @@ class Hamiltonian:
         self._control_sol = sol.y[0]
         self._flags['ode_solved'] = True
 
-    def synthesize_pulse(self, duration: float, method: str = None, pulse_args: Optional[tuple] = None,
+    def _check_eigensystem_parameters(self):
+        """Validate control settings needed to compute and compute the eigenvalues."""
+        missing_params = []
+
+        if self.control_name is None:
+            missing_params.append("control_name")
+        if self.pulse_initial is None:
+            missing_params.append("pulse_initial")
+        if self.pulse_final is None:
+            missing_params.append("pulse_final")
+        if self.num_steps is None:
+            missing_params.append("num_steps")
+
+        if missing_params:
+            missing_msg = ", ".join(missing_params)
+            raise MissingControlParameterError(f"Missing control _parameters for eigensystem: {missing_msg}. "
+                                               "Please set them using set_control(...).")
+
+    def plot_eigenvalues(self, fig=None, ax=None, legend: bool = True, legend_kwargs: Optional[dict] = None,
+                         xlabel: Optional[str] = None, ylabel: Optional[str] = None,
+                         title: Optional[str] = None, **plot_kwargs):
+        """
+        Plot Hamiltonian eigenvalues as a function of the control parameter.
+
+        Parameters
+        ----------
+        fig, ax
+            Optional matplotlib figure/axis. If not provided, they are created.
+        legend : bool
+            Whether to draw a legend.
+        legend_kwargs : Optional[dict]
+            Extra kwargs forwarded to ``ax.legend``.
+        xlabel : Optional[str]
+            Label for the x-axis. Defaults to ``control_name`` when not provided.
+        ylabel : Optional[str]
+            Label for the y-axis. Defaults to ``"Energy"`` when not provided.
+        title : Optional[str]
+            Plot title. Defaults to ``"Hamiltonian Eigenvalues"`` when not provided.
+        **plot_kwargs
+            Extra kwargs forwarded to ``ax.plot`` for each energy branch.
+
+        Returns
+        -------
+        tuple
+            ``(fig, ax)`` with the generated plot.
+        """
+        self._check_eigensystem_parameters()
+
+        if ax is None:
+            import matplotlib.pyplot as plt
+
+            if fig is None:
+                fig, ax = plt.subplots()
+            else:
+                ax = fig.add_subplot(111)
+        elif fig is None:
+            fig = ax.figure
+
+        for level in range(self.eigenenergies.shape[1]):
+            ax.plot(self._control_pulse, self.eigenenergies[:, level], label=f"E{level}", **plot_kwargs)
+
+        ax.set_xlabel(self.control_name if xlabel is None else xlabel)
+        ax.set_ylabel("Energy" if ylabel is None else ylabel)
+        ax.set_title("Hamiltonian Eigenvalues" if title is None else title)
+
+        if legend:
+            ax.legend(**(legend_kwargs or {}))
+
+        return fig, ax
+
+    def synthesize_pulse(self, duration: float, method: Optional[str] = None, pulse_args: Optional[tuple] = None,
                          pulse_kwargs: Optional[dict] = None):
         """
         Synthesize the control pulse based on the solution of the optimization problem. If the problem has not been
@@ -576,10 +667,12 @@ class Hamiltonian:
         ----------
         duration : float
             The total duration of the control pulse.
-        kwargs_filter : Optional[dict]
-            Additional keyword arguments for the pulse filter (if any).
-        convoluted_array : Optional[np.ndarray]
-            An optional array to convolve with the control pulse (if any).
+        method : Optional[str]
+            Name of the method to use for the pulse synthesis
+        pulse_args : Optional[tuple]
+            Positional arguments for the pulse synthesis (e.g., duration, filter parameters).
+        pulse_kwargs : Optional[dict]
+            Keyword arguments for the pulse synthesis (e.g., duration, filter parameters).
 
         Returns
         -------
@@ -587,8 +680,7 @@ class Hamiltonian:
              An instance of the PulseControl class representing the synthesized control pulse.
         """
         self.solve_problem()
-        self._pulse = PulseControl(self._control_sol, duration, method, pulse_args,
-                                   pulse_kwargs)  # ToDo: Use the actual Pulse class instead of a placeholder
+        self._pulse = PulseControl(self._control_sol, duration, method, pulse_args, pulse_kwargs)
         return self._pulse()
 
     def _check_control_parameters(self):
