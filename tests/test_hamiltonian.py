@@ -1,8 +1,9 @@
 import numpy as np
 import pytest
+from scipy.integrate import solve_ivp
 
 from geodesiq import Hamiltonian, InvalidControlParameterError, ImmutableConfigurationError, \
-    MissingControlParameterError
+    MissingControlParameterError, ValidationError
 
 
 # ---------------------------------------------------------------------------
@@ -267,6 +268,62 @@ class TestSolveProblem:
         sol = configured_ham.control_sol
         assert sol is not None
         assert configured_ham._flags["ode_solved"] is True
+
+    def test_solve_problem_accepts_custom_solver_function_and_kwargs(self, configured_ham):
+        calls = {}
+
+        def custom_solver(fun, t_span, y0, t_eval=None, **kwargs):
+            calls["kwargs"] = kwargs
+            return solve_ivp(fun, t_span, y0, t_eval=t_eval, **kwargs)
+
+        configured_ham.solve_problem(
+            solver=custom_solver,
+            solver_kwargs={"method": "RK23", "rtol": 1e-5, "atol": 1e-7},
+        )
+
+        assert calls["kwargs"]["method"] == "RK23"
+        assert np.isclose(calls["kwargs"]["rtol"], 1e-5)
+        assert np.isclose(calls["kwargs"]["atol"], 1e-7)
+
+    def test_solve_problem_accepts_custom_metric_integrator_and_kwargs(self, configured_ham):
+        calls = {}
+
+        def custom_metric_integrator(values, dx=1.0, scale=1.0):
+            calls["dx"] = dx
+            calls["scale"] = scale
+            return np.trapezoid(values, dx=dx) * scale
+
+        configured_ham.solve_problem(
+            metric_integrator=custom_metric_integrator,
+            metric_integrator_kwargs={"scale": 1.0},
+        )
+
+        dx = float(np.abs(configured_ham._control_pulse[1] - configured_ham._control_pulse[0]))
+        expected = np.trapezoid(np.sqrt(configured_ham._metric_tensor), dx=dx)
+
+        assert np.isclose(calls["dx"], dx)
+        assert np.isclose(calls["scale"], 1.0)
+        assert np.isclose(configured_ham._a_tilde, expected)
+
+    def test_solve_problem_recomputes_ode_when_solver_changes(self, configured_ham):
+        configured_ham.solve_problem()
+        baseline = configured_ham._control_sol.copy()
+
+        def synthetic_solver(_, __, y0, t_eval=None, **kwargs):
+            return t_eval, np.array([np.full_like(t_eval, y0[0] + kwargs.get("offset", 0.0), dtype=float)])
+
+        configured_ham.solve_problem(solver=synthetic_solver, solver_kwargs={"offset": 0.123})
+
+        assert np.allclose(configured_ham._control_sol, configured_ham.pulse_initial + 0.123)
+        assert not np.allclose(configured_ham._control_sol, baseline)
+
+    def test_solve_problem_rejects_non_callable_solver(self, configured_ham):
+        with pytest.raises(ValidationError, match="solver must be a callable"):
+            configured_ham.solve_problem(solver="RK45")
+
+    def test_solve_problem_rejects_non_callable_metric_integrator(self, configured_ham):
+        with pytest.raises(ValidationError, match="metric_integrator must be a callable"):
+            configured_ham.solve_problem(metric_integrator="romb")
 
 
 # ---------------------------------------------------------------------------

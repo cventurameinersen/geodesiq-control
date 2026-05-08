@@ -6,7 +6,13 @@ from scipy.integrate import solve_ivp, romb
 from scipy.interpolate import interp1d
 
 from ._utils import Flags, build_diab
-from .exceptions import ImmutableConfigurationError, MissingControlParameterError, InvalidControlParameterError
+from .exceptions import (
+    ImmutableConfigurationError,
+    MissingControlParameterError,
+    InvalidControlParameterError,
+    ValidationError,
+    SolverError,
+)
 from .pulses import PulseControl
 
 
@@ -76,6 +82,12 @@ class Hamiltonian:
         self._control_pulse = None
         self._control_sol = None
         self._pulse = None
+
+        # Numerical integration configuration (user-overridable in solve_problem).
+        self._solver = solve_ivp
+        self._solver_kwargs = {}
+        self._metric_integrator = romb
+        self._metric_integrator_kwargs = {}
 
     # Setters and getters are defined for the critical attributes of the Hamiltonian class, so we have control over how
     # the user modifies them. It is important that the correct flags are updated when these attributes are changed
@@ -401,7 +413,14 @@ class Hamiltonian:
         self.dia_beta = dia_beta
         self.num_steps = num_steps
 
-    def solve_problem(self, pulse_accuracy: int = 1000, solver_kwargs: Optional[dict] = None):
+    def solve_problem(
+            self,
+            pulse_accuracy: int = 1000,
+            solver: Optional[Callable] = None,
+            solver_kwargs: Optional[dict] = None,
+            metric_integrator: Optional[Callable] = None,
+            metric_integrator_kwargs: Optional[dict] = None,
+    ):
         """
         Solve the optimization problem to find the optimal control pulse. This method computes the metric tensor based
         on the energies and matrix elements of the Hamiltonian, and then solves the ODE for the control pulse using the
@@ -413,19 +432,73 @@ class Hamiltonian:
         pulse_accuracy : int
             The number of points to use in the numerical solution of the ODE for the control pulse. Higher values will
              yield a more accurate solution but will also increase the computational cost.
+        solver : Optional[Callable]
+            Callable used to integrate the ODE. Defaults to ``scipy.integrate.solve_ivp``.
+            Expected signature is solver(fun, t_span, y0, t_eval=..., **kwargs), and the return
+            value must expose ``t`` and ``y`` (or be a ``(t, y)`` tuple).
         solver_kwargs : Optional[dict]
-            Additional keyword arguments for the ODE solver (if any). This allows you to customize the behavior of the
-             ODE solver, such as the integration method, tolerances, etc.
+            Additional keyword arguments forwarded to ``solver``.
+        metric_integrator : Optional[Callable]
+            Callable used to compute ``a_tilde`` from ``sqrt(metric_tensor)``. Defaults to
+            ``scipy.integrate.romb``.
+        metric_integrator_kwargs : Optional[dict]
+            Additional keyword arguments forwarded to ``metric_integrator``.
         """
         self._check_control_parameters()
+
+        self._configure_integration(
+            solver=solver,
+            solver_kwargs=solver_kwargs,
+            metric_integrator=metric_integrator,
+            metric_integrator_kwargs=metric_integrator_kwargs,
+        )
 
         self._solve_eigenproblem()
         self._compute_metric_tensor()
 
-        if solver_kwargs is None:
-            solver_kwargs = {}
+        self._solve_ode(pulse_accuracy)
 
-        self._solve_ode(pulse_accuracy, solver_kwargs)
+    def _configure_integration(
+            self,
+            solver: Optional[Callable],
+            solver_kwargs: Optional[dict],
+            metric_integrator: Optional[Callable],
+            metric_integrator_kwargs: Optional[dict],
+    ):
+        selected_solver = solve_ivp if solver is None else solver
+        selected_metric_integrator = romb if metric_integrator is None else metric_integrator
+        if solver_kwargs is None:
+            selected_solver_kwargs = {}
+        elif isinstance(solver_kwargs, dict):
+            selected_solver_kwargs = dict(solver_kwargs)
+        else:
+            raise ValidationError("solver_kwargs must be a dictionary.")
+
+        if metric_integrator_kwargs is None:
+            selected_metric_integrator_kwargs = {}
+        elif isinstance(metric_integrator_kwargs, dict):
+            selected_metric_integrator_kwargs = dict(metric_integrator_kwargs)
+        else:
+            raise ValidationError("metric_integrator_kwargs must be a dictionary.")
+
+        if not callable(selected_solver):
+            raise ValidationError("solver must be a callable integration function.")
+
+        if not callable(selected_metric_integrator):
+            raise ValidationError("metric_integrator must be a callable integration function.")
+
+        if (
+                selected_metric_integrator is not self._metric_integrator
+                or selected_metric_integrator_kwargs != self._metric_integrator_kwargs
+        ):
+            self._metric_integrator = selected_metric_integrator
+            self._metric_integrator_kwargs = selected_metric_integrator_kwargs
+            self._flags['metric_computed'] = False
+
+        if selected_solver is not self._solver or selected_solver_kwargs != self._solver_kwargs:
+            self._solver = selected_solver
+            self._solver_kwargs = selected_solver_kwargs
+            self._flags['ode_solved'] = False
 
     def _solve_dia_list(self):
         """
@@ -485,8 +558,15 @@ class Hamiltonian:
             self._solve_dia_list()  # Ensure the diabatic passage list is computed before computing the metric tensor
             self._compute_G_diabatic()
 
-        self._a_tilde = float(
-            romb(np.sqrt(self._metric_tensor), dx=float(np.abs(self._control_pulse[1] - self._control_pulse[0]))))
+        dx = float(np.abs(self._control_pulse[1] - self._control_pulse[0]))
+        metric_values = np.sqrt(self._metric_tensor)
+
+        try:
+            self._a_tilde = float(self._metric_integrator(metric_values, dx=dx, **self._metric_integrator_kwargs))
+        except TypeError as exc:
+            raise ValidationError(
+                "Invalid metric_integrator call: ensure it accepts arguments like (values, dx=..., **kwargs)."
+            ) from exc
 
         self._flags['metric_computed'] = True  # Mark the metric as computed to avoid recomputation
 
@@ -565,7 +645,7 @@ class Hamiltonian:
         res = res.reshape((dim, dim, self.num_steps))
         return res.transpose(2, 0, 1)  # Reshape and transpose to get the correct shape (num_steps, dim, dim)
 
-    def _solve_ode(self, pulse_accuracy: int, solve_kwargs):
+    def _solve_ode(self, pulse_accuracy: int):
         """
         Solve the ODE for the control pulse using the computed metric tensor and the normalization factor a_tilde.
         """
@@ -581,10 +661,30 @@ class Hamiltonian:
             return sig * factor_interpolation(y)
 
         s = np.linspace(0, 1, pulse_accuracy)
-        sol = solve_ivp(model, [0, 1], [self._control_pulse[0]], t_eval=s, dense_output=True, method='RK45', atol=1e-8,
-                        rtol=1e-6, **solve_kwargs)
-        self._s = sol.t
-        self._control_sol = sol.y[0]
+        kwargs = dict(self._solver_kwargs)
+        if self._solver is solve_ivp:
+            kwargs = {'dense_output': True, 'method': 'RK45', 'atol': 1e-8, 'rtol': 1e-6, **kwargs}
+
+        try:
+            sol = self._solver(model, [0, 1], [self._control_pulse[0]], t_eval=s, **kwargs)
+        except TypeError as exc:
+            raise ValidationError(
+                "Invalid solver call: ensure solver accepts (fun, t_span, y0, t_eval=..., **kwargs)."
+            ) from exc
+
+        if hasattr(sol, "success") and not sol.success:
+            raise SolverError(getattr(sol, "message", "ODE solver failed."))
+
+        if isinstance(sol, tuple) and len(sol) == 2:
+            t_arr, y_arr = sol
+        elif hasattr(sol, "t") and hasattr(sol, "y"):
+            t_arr, y_arr = sol.t, sol.y
+        else:
+            raise SolverError("Solver output must expose 't' and 'y', or return a (t, y) tuple.")
+
+        y_arr = np.asarray(y_arr)
+        self._s = np.asarray(t_arr)
+        self._control_sol = y_arr[0] if y_arr.ndim == 2 else y_arr
         self._flags['ode_solved'] = True
 
     def _check_eigensystem_parameters(self):
