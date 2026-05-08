@@ -149,6 +149,11 @@ def build_diab(initial_state: int, final_state: int, dim: int) -> np.ndarray:
 
     for i in range(dim):
         for j in range(i + 1, dim):
-            pass  # ToDo continue
+            if min_state <= i <= max_state and min_state <= j <= max_state:
+                diad_list[i, j] = 0
+                diad_list[j, i] = 0
+            else:
+                diad_list[i, j] = 1
+                diad_list[j, i] = 1
 
-    # ToDo: use the symmetry of the problem to compute the lower triangular part of the matrix
+    return diad_list

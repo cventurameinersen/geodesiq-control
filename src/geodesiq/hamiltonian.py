@@ -5,7 +5,7 @@ from scipy.differentiate import jacobian
 from scipy.integrate import solve_ivp, romb
 from scipy.interpolate import interp1d
 
-from ._utils import Flags
+from ._utils import Flags, build_diab
 from .exceptions import ImmutableConfigurationError, MissingControlParameterError, InvalidControlParameterError
 from .pulses import PulseControl
 
@@ -40,7 +40,8 @@ class Hamiltonian:
         # Initialize flags needed to track the state of the computations
         self._flags = Flags()
         self._flags.add('eigenproblem_solved')
-        self._flags.add('metric_computed', parent='eigenproblem_solved')
+        self._flags.add('dia_list_computed')
+        self._flags.add('metric_computed', parents=['eigenproblem_solved', 'dia_list_computed'])
         self._flags.add('ode_solved', parent='metric_computed')
 
         if self._partial_H_func is not None:
@@ -54,8 +55,11 @@ class Hamiltonian:
         self._pulse_initial = None
         self._pulse_final = None
         self._initial_state = None
+        self._final_state = None
         self._alpha = None
         self._beta = None
+        self._dia_alpha = None
+        self._dia_beta = None
         self._num_steps = None
 
         # Initialize energy gaps and matrix elements to None (to be computed in self.solve_problem())
@@ -63,6 +67,7 @@ class Hamiltonian:
         self._matrix_elements = None
 
         # Initialize metric tensor and normalization factor to None (to be computed in self.solve_problem())
+        self._dia_list = None
         self._metric_tensor = None
         self._a_tilde = None
 
@@ -112,6 +117,8 @@ class Hamiltonian:
             return
         if not isinstance(name, str):
             raise InvalidControlParameterError("Control name must be a string.")
+        if name == self._control_name:  # Keep the previous value
+            return
         self._control_name = name
         self._flags['eigenproblem_solved'] = False  # Reset the eigenproblem solved flag if the control name changes
 
@@ -126,6 +133,10 @@ class Hamiltonian:
 
         if not isinstance(value, (int, float)):
             raise InvalidControlParameterError("Pulse initial value must be a number.")
+
+        if value == self._pulse_initial:  # Keep the previous value
+            return
+
         self._pulse_initial = value
         self._flags[
             'eigenproblem_solved'] = False  # Reset the eigenproblem solved flag if the pulse initial value changes
@@ -141,6 +152,9 @@ class Hamiltonian:
 
         if not isinstance(value, (int, float)):
             raise InvalidControlParameterError("Pulse final value must be a number.")
+
+        if value == self._pulse_final:  # Keep the previous value
+            return
         self._pulse_final = value
         self._flags[
             'eigenproblem_solved'] = False  # Reset the eigenproblem solved flag if the pulse final value changes
@@ -156,8 +170,44 @@ class Hamiltonian:
 
         if not isinstance(value, int):
             raise InvalidControlParameterError("Initial state index must be an integer.")
+
+        if value == self._initial_state:  # Keep the previous value
+            return
+
         self._initial_state = value
+
+        if self._final_state is None:  # If not final state, assume for the moment that is the same as the intial one
+            self.final_state = value
+
         self._flags['metric_computed'] = False  # Reset the  metric computed flag if the initial state index changes
+        self._flags['dia_list_computed'] = False  # Reset the diabatic computed flag if the pulse initial value changes
+
+        # If the initial state is the same as the final state, we can mark the diabatic passage list as computed
+        if self._initial_state == self._final_state:
+            self._flags['dia_list_computed'] = True
+
+    @property
+    def final_state(self):
+        return self._final_state
+
+    @final_state.setter
+    def final_state(self, value):
+        if value is None:  # Keep the previous value
+            return
+
+        if not isinstance(value, int):
+            raise InvalidControlParameterError("Final state index must be an integer.")
+
+        if value == self._final_state:  # Keep the previous value
+            return
+
+        self._final_state = value
+        self._flags['metric_computed'] = False  # Reset the metric computed flag if the final state index changes
+        self._flags['dia_list_computed'] = False  # Reset the diabatic computed flag if the pulse initial value changes
+
+        # If the initial state is the same as the final state, we can mark the diabatic passage list as computed
+        if self._initial_state == self._final_state:
+            self._flags['dia_list_computed'] = True
 
     @property
     def alpha(self):
@@ -170,6 +220,10 @@ class Hamiltonian:
 
         if not isinstance(value, (int, float)):
             raise InvalidControlParameterError("Alpha must be a number.")
+
+        if value == self._alpha:  # Keep the previous value
+            return
+
         self._alpha = value
         self._flags['metric_computed'] = False  # Reset the metric computed flag if alpha changes
 
@@ -184,7 +238,47 @@ class Hamiltonian:
 
         if not isinstance(value, (int, float)):
             raise InvalidControlParameterError("Beta must be a number.")
+
+        if value == self._beta:  # Keep the previous value
+            return
+
         self._beta = value
+        self._flags['metric_computed'] = False  # Reset the metric computed flag if beta changes
+
+    @property
+    def dia_alpha(self):
+        return self._dia_alpha
+
+    @dia_alpha.setter
+    def dia_alpha(self, value):
+        if value is None:  # Keep the previous value
+            return
+
+        if not isinstance(value, (int, float)):
+            raise InvalidControlParameterError("Diabatic alpha must be a number.")
+
+        if value == self._dia_alpha:  # Keep the previous value
+            return
+
+        self._dia_alpha = value
+        self._flags['metric_computed'] = False  # Reset the metric computed flag if alpha changes
+
+    @property
+    def dia_beta(self):
+        return self._dia_beta
+
+    @dia_beta.setter
+    def dia_beta(self, value):
+        if value is None:  # Keep the previous value
+            return
+
+        if not isinstance(value, (int, float)):
+            raise InvalidControlParameterError("Diabatic beta must be a number.")
+
+        if value == self._dia_beta:  # Keep the previous value
+            return
+
+        self._dia_beta = value
         self._flags['metric_computed'] = False  # Reset the metric computed flag if beta changes
 
     @property
@@ -198,6 +292,10 @@ class Hamiltonian:
 
         if not isinstance(value, int) or value <= 0:
             raise InvalidControlParameterError("Number of steps must be a positive integer.")
+
+        if value == self._num_steps:  # Keep the previous value
+            return
+
         self._num_steps = value
         self._flags['eigenproblem_solved'] = False  # Reset the eigenproblem solved flag if the number of steps changes
 
@@ -230,7 +328,8 @@ class Hamiltonian:
 
     def set_control(self, control_name: Optional[str] = None, pulse_initial: Optional[float] = None,
                     pulse_final: Optional[float] = None, initial_state: Optional[int] = None,
-                    alpha: Optional[float] = None, beta: Optional[float] = None, num_steps: int = 2 ** 10 + 1):
+                    final_state: Optional[int] = None, alpha: Optional[float] = None, beta: Optional[float] = None,
+                    dia_alpha: Optional[float] = None, dia_beta: Optional[float] = None, num_steps: int = 2 ** 10 + 1):
         """
         Set the control _parameters for the optimization problem. This method allows you to specify the control
         _parameters such as the name of the control parameter, the initial and final values of the control pulse, ....
@@ -250,12 +349,21 @@ class Hamiltonian:
         initial_state : Optional[int]
             The index of the initial state in the energy spectrum. This is used to compute the metric tensor and the
              ODE for the control pulse.
+        final_state : Optional[int]
+            The index of the final state in the energy spectrum. This is used to compute the metric tensor and the ODE
+            for the control pulse. If not provided, it will be assumed to be the same as the initial state.
         alpha : Optional[float]
             The exponent alpha used in the metric tensor computation. This parameter controls the weighting of the
              energy gaps in the metric tensor.
         beta : Optional[float]
             The exponent beta used in the metric tensor computation. This parameter controls the weighting of the
             matrix elements in the metric tensor.
+        dia_alpha : Optional[float]
+            The exponent alpha used in the diabatic passage contribution to the metric tensor. This parameter controls
+             the weighting of the energy gaps in the diabatic passage contribution to the metric tensor.
+        dia_beta : Optional[float]
+            The exponent beta used in the diabatic passage contribution to the metric tensor. This parameter controls
+             the weighting of the matrix elements in the diabatic passage contribution to the metric tensor.
         num_steps : int
             The number of steps to use in the discretization of the control pulse. This determines the resolution of
              the control pulse and the accuracy of the numerical solution. Higher values will yield a more accurate
@@ -266,9 +374,11 @@ class Hamiltonian:
         self.pulse_initial = pulse_initial
         self.pulse_final = pulse_final
         self.initial_state = initial_state
-        # self.final_state = final_state
+        self.final_state = final_state
         self.alpha = alpha
         self.beta = beta
+        self.dia_alpha = dia_alpha
+        self.dia_beta = dia_beta
         self.num_steps = num_steps
 
     def solve_problem(self, pulse_accuracy: int = 1000, solver_kwargs: Optional[dict] = None):
@@ -298,6 +408,19 @@ class Hamiltonian:
             solver_kwargs = {}
 
         self._solve_ode(pulse_accuracy, solver_kwargs)
+
+    def _solve_dia_list(self):
+        """
+        Compute the diabatic passage list based on the initial and final states. This method is called internally by
+        solve_problem() to compute the diabatic passage list, which is used in the computation of the metric tensor.
+        The results are stored in self._dia_list for later use in computing the metric tensor.
+        """
+        if self._flags['dia_list_computed']:
+            return  # If the diabatic passage list is already computed, skip the computation
+
+        dim = self._energies.shape[1]  # Get the dimension of the Hamiltonian from the energies array
+        self._dia_list = build_diab(initial_state=self.initial_state, final_state=self.final_state, dim=dim)
+        self._flags['dia_list_computed'] = True  # Mark the diabatic passage list as computed to avoid recomputation
 
     def _solve_eigenproblem(self):
         """
@@ -334,53 +457,63 @@ class Hamiltonian:
         """
         if self._flags['metric_computed']:
             return
-        num, dim = np.shape(self._energies)
 
-        # ToDo: Implement the diabatic passage
-        counter = 0  # Temp variable to save the number of G_tensor computed
-        G_tensor = np.zeros([num, dim - 1])
-        for i in range(dim):
-            if i != self.initial_state:
-                num = self._matrix_elements[:, self.initial_state, i]
-                den = np.abs(self._energies[:, i] - self._energies[:, self.initial_state])
-                G_tensor[:, counter] = num ** self.beta / (den ** self.alpha)
+        if self._initial_state == self._final_state:
+            self._compute_G_adiabatic()
+        else:
+            self._solve_dia_list()  # Ensure the diabatic passage list is computed before computing the metric tensor
+            self._compute_G_diabatic()
 
-                counter += 1
-
-        self._metric_tensor = np.sum(G_tensor, axis=1)
         self._a_tilde = float(
             romb(np.sqrt(self._metric_tensor), dx=float(np.abs(self._control_pulse[1] - self._control_pulse[0]))))
 
         self._flags['metric_computed'] = True  # Mark the metric as computed to avoid recomputation
 
+    def _compute_G_diabatic(self):
+        num, dim = np.shape(self._energies)
+
+        counter_n = 0
+        counter_m = 0
+        diad_tensor = np.zeros([num, dim - 1, dim])
+
+        for m in range(dim):
+            for n in range(dim):
+
+                if n != m:
+                    ad_idx = self._dia_list[m][n]
+
+                    numerator = self._matrix_elements[:, m, n]
+                    denominator = np.abs(self._energies[:, n] - self._energies[:, m])
+
+                    diad_tensor[:, counter_n, counter_m] = np.heaviside(ad_idx, 1) * (
+                            ad_idx * (numerator ** self.beta / (denominator ** self.alpha)) + (1 - ad_idx) * (
+                            numerator ** self.dia_beta / (denominator ** self.dia_alpha)))
+
+                    counter_n += 1
+
+            counter_m += 1
+            counter_n = 0
+
+        self._metric_tensor = np.sum(diad_tensor, axis=(1, 2))
+
+    def _compute_G_adiabatic(self):
         """
-        # diad_list = self._build_diad_list(dim=dim)
-        # diad_tensor = np.zeros([num, dim - 1, dim])
-        # counter_n = 0
-        # counter_m = 0
-        #
-        # for m in range(dim):
-        #     for n in range(dim):
-        #
-        #         if n != m:
-        #             ad_idx = diad_list[m][n]
-        #
-        #             num = np.abs(np.einsum('ia,iab,ib->i', states[..., m].conj(), full_partial_H, states[..., n],
-        #                                    optimize='greedy'))
-        #
-        #             den = np.abs(energies[:, n] - energies[:, m])
-        #
-        #             diad_tensor[:, counter_n, counter_m] = np.heaviside(ad_idx, 1) * (
-        #                     ad_idx * (num ** self.beta / (den ** self.alpha)) + (1 - ad_idx) * (
-        #                     num ** (self.dia_beta) / (den ** (self.dia_alpha))))
-        #
-        #             counter_n += 1
-        #
-        #     counter_m += 1
-        #     counter_n = 0
-        
-        # diad_tensor = np.sum(diad_tensor, axis=(1, 2))
+        Compute the adiabatic contribution to the metric tensor G_tensor based on the energies and matrix elements
+        of the
         """
+
+        num, dim = np.shape(self._energies)
+        counter = 0  # Temp variable to save the number of G_tensor computed
+        G_tensor = np.zeros([num, dim - 1])
+        for i in range(dim):
+            if i != self.initial_state:
+                numerator = self._matrix_elements[:, self.initial_state, i]
+                denominator = np.abs(self._energies[:, i] - self._energies[:, self.initial_state])
+                G_tensor[:, counter] = numerator ** self.beta / (denominator ** self.alpha)
+
+                counter += 1
+
+        self._metric_tensor = np.sum(G_tensor, axis=1)
 
     def _compute_numerical_partial_H(self) -> np.ndarray:
         """
@@ -433,8 +566,8 @@ class Hamiltonian:
         self._control_sol = sol.y[0]
         self._flags['ode_solved'] = True
 
-    def synthesize_pulse(self, duration: float, method: str = None, 
-                         pulse_args: Optional[tuple] = None, pulse_kwargs: Optional[dict] = None):
+    def synthesize_pulse(self, duration: float, method: str = None, pulse_args: Optional[tuple] = None,
+                         pulse_kwargs: Optional[dict] = None):
         """
         Synthesize the control pulse based on the solution of the optimization problem. If the problem has not been
         solved yet, this method will automatically solve it first.
@@ -454,7 +587,8 @@ class Hamiltonian:
              An instance of the PulseControl class representing the synthesized control pulse.
         """
         self.solve_problem()
-        self._pulse = PulseControl(self._control_sol, duration, method, pulse_args, pulse_kwargs)  # ToDo: Use the actual Pulse class instead of a placeholder
+        self._pulse = PulseControl(self._s, self._control_sol, duration, method, pulse_args,
+                                   pulse_kwargs)  # ToDo: Use the actual Pulse class instead of a placeholder
         return self._pulse()
 
     def _check_control_parameters(self):
@@ -470,12 +604,20 @@ class Hamiltonian:
             missing_params.append("pulse_initial")
         if self.pulse_final is None:
             missing_params.append("pulse_final")
-        if self.initial_state is None:  # ToDo: Include checks when diabatic is implemented
+        if self.initial_state is None:
             missing_params.append("initial_state")
+        if self.final_state is None:
+            missing_params.append("final_state")
         if self.alpha is None:
             missing_params.append("alpha")
         if self.beta is None:
             missing_params.append("beta")
+
+        if self._initial_state != self._final_state:
+            if self.dia_alpha is None:
+                missing_params.append("dia_alpha")
+            if self.dia_beta is None:
+                missing_params.append("dia_beta")
 
         if missing_params:
             missing_msg = ", ".join(missing_params)
@@ -485,9 +627,9 @@ class Hamiltonian:
 
     def _generate_summary(self) -> str:
         """
-        Generate a summary string of the current control _parameters and settings. This method creates a formatted string
-        that provides a clear overview of the control _parameters, their values, and any relevant settings for the
-        optimization problem. The summary can be used for logging, debugging, or displaying the current state of the
+        Generate a summary string of the current control _parameters and settings. This method creates a formatted
+        string that provides a clear overview of the control _parameters, their values, and any relevant settings for
+        the optimization problem. The summary can be used for logging, debugging, or displaying the current state of the
         Hamiltonian object.
         """
         summary_lines = ["------------------ Hamiltonian Control Summary ------------------",
@@ -500,8 +642,11 @@ class Hamiltonian:
                          f"Pulse final → {self.pulse_final if self.pulse_final is not None else '❌ not set'}",
                          f"Initial state index →"
                          f" {self.initial_state if self.initial_state is not None else '❌ not set'}",
+                         f"Final state index → {self.final_state if self.final_state is not None else '❌ not set'}",
                          f"(Alpha, Beta) → ({self.alpha if self.alpha is not None else '❌ not set'}, "
                          f"{self.beta if self.beta is not None else '❌ not set'})",
+                         f"(Diabatic Alpha, Diabatic Beta) → ({self.dia_alpha if self.dia_alpha is not None else '❌ not set'}, "
+                         f"{self.dia_beta if self.dia_beta is not None else '❌ not set'})",
                          f"Eigenproblem solved → {'✅ yes' if self._flags['eigenproblem_solved'] else '❌ no'}",
                          f"Metric computed → {'✅ yes' if self._flags['metric_computed'] else '❌ no'}",
                          f"ODE solved → {'✅ yes' if self._flags['ode_solved'] else '❌ no'}",
