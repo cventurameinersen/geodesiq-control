@@ -99,13 +99,13 @@ class Dynamics:
 
 
 
-    def average_gate_fidelity(self, gate: Optional[Union[qt.Qobj]] = None, target_gate: Optional[Union[qt.Qobj, np.ndarray]] = None):
+    def average_gate_fidelity(self, gate: Optional[qt.Qobj] = None, target_gate: Optional[Union[qt.Qobj, np.ndarray]] = None):
         """
         Compute average gate fidelity given the pulsed time evolution operator in the explicit real-time duration given.
 
         Parameters:
         -----------
-        gate: Optional[Union[qt.Qobj]]
+        gate: Optional[qt.Qobj]
             The resulting pulsed gate operation.
         target_gate: Optional[Union[qt.Qobj, np.ndarray]]
             The target gate operation.
@@ -115,9 +115,9 @@ class Dynamics:
         
         if gate is None:
             U = self.time_evolution_operator()
-            gate_fid = qt.average_gate_fidelity(oper=U, target=target_gate)
+            gate_fid = [qt.average_gate_fidelity(oper=U[j], target=target_gate) for j in range(len(U))]
         else:
-            gate_fid = qt.average_gate_fidelity(oper=gate, target=target_gate)
+            gate_fid = [qt.average_gate_fidelity(oper=gate[j], target=target_gate) for j in range(len(gate))]
         
         return gate_fid
         
