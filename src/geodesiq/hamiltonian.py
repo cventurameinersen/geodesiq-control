@@ -71,8 +71,6 @@ class Hamiltonian:
         # Initialize energy gaps and matrix elements to None (to be computed in self.solve_problem())
         self._energies = None
         self._matrix_elements = None
-        self._initial_state_eigenvector = None
-        self._final_state_eigenvector = None
 
         # Initialize metric tensor and normalization factor to None (to be computed in self.solve_problem())
         self._dia_list = None
@@ -532,8 +530,6 @@ class Hamiltonian:
 
         self._energies, eigenvectors = np.linalg.eigh(full_hamiltonian)
         
-        self._initial_state_eigenvector = eigenvectors[:, self.initial_state, 0]
-        self._final_state_eigenvector = eigenvectors[:, self.final_state, -1]
 
         if self._flag_numerical_partial_H:
             # Compute the numerical partial derivative of H with respect to the control parameter

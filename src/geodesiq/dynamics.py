@@ -27,9 +27,10 @@ class Dynamics:
         self._hamiltonian = hamiltonian
         self._H_func = hamiltonian._H_func
         self._parameters = hamiltonian._parameters
+        self._control_pulse = hamiltonian._control_pulse
         self._control_sol = hamiltonian._control_sol
-        self._initial_state_eigenvector = hamiltonian._initial_state_eigenvector
-        self._final_state_eigenvector = hamiltonian._final_state_eigenvector
+        self._initial_state = hamiltonian._initial_state
+        self._final_state = hamiltonian._final_state
 
 
         self._duration = duration
@@ -78,18 +79,23 @@ class Dynamics:
 
         """
         if initial_state is None and final_state is None:
-            psi_init = qt.Qobj(self._initial_state_eigenvector)
-            psi_target = qt.Qobj(self._final_state_eigenvector)
+            _, init_eigenstates = qt.Qobj(self._H_func(self._control_pulse[0], **self._parameters)).eigenstates()
+            psi_init = init_eigenstates[self._initial_state]
+
+            _, final_eigenstates = qt.Qobj(self._H_func(self._control_pulse[-1], **self._parameters)).eigenstates()
+            psi_target = final_eigenstates[self._final_state]
+
         elif isinstance(initial_state, np.ndarray) and isinstance(final_state, np.ndarray):
-            if initial_state.shape != self._H_func(0, **self._parameters).shape[0] or final_state.shape != self._H_func(0, **self._parameters).shape[0]:
-                raise ValidationError("Initial and final states must have the same dimension as the Hamiltonian.")
+            if initial_state.shape[0] != self._H_func(0, **self._parameters).shape[0] or final_state.shape[0] != self._H_func(0, **self._parameters).shape[0]:
+                raise ValidationError(f"Initial and final states must have the same dimension as the Hamiltonian. Shape of Hamiltonian: {self._H_func(0, **self._parameters).shape}. Shape of initial state: {initial_state.shape}") 
+            
             psi_init = qt.Qobj(initial_state)
             psi_target = qt.Qobj(final_state)
+
         else:
             raise ValidationError("Initial and final states must be either integers or numpy arrays with correct dimensions.")
         
         c_ops = [qt.Qobj(op) for op in c_ops]
-        print(psi_init, psi_target, c_ops)
         
         H_T = qt.QobjEvo(self._get_ham, args={"pulse": self._control_sol, "times": self._pulse_times})
         psi_f = qt.mesolve(H_T, psi_init, self._pulse_times, c_ops=c_ops).states[-1]
