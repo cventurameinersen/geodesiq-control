@@ -31,6 +31,7 @@ class Dynamics:
         self._control_sol = hamiltonian._control_sol
         self._initial_state = hamiltonian._initial_state
         self._final_state = hamiltonian._final_state
+        self._control_name = hamiltonian._control_name
 
 
         self._duration = duration
@@ -43,12 +44,20 @@ class Dynamics:
         """
         Construct the time-dependent Hamiltonian using QuTiP QObj. 
         """
-        x_array = args["pulse"]
+        # x_array = args["pulse"]
+        # t_array = args["times"]
+
+        # x_t = np.interp(t, t_array, x_array)
+
+        # return qt.Qobj(self._H_func(x_t, **self._parameters))
+
+        pulse_array = args["pulse"]
         t_array = args["times"]
 
-        x_t = np.interp(t, t_array, x_array)
+        control_val_t = np.interp(t, t_array, pulse_array)
+        ham_kwargs = {self._control_name: control_val_t, **self._parameters}
 
-        return qt.Qobj(self._H_func(x_t, **self._parameters))
+        return qt.Qobj(self._H_func(**ham_kwargs))
 
 
 
@@ -60,10 +69,11 @@ class Dynamics:
         
 
 
-
+    
+    
     def state_fidelity(self, initial_state: Optional[np.ndarray] = None, 
-                               final_state: Optional[np.ndarray] = None, 
-                                     c_ops: Optional[list] = []) -> float:
+                   final_state: Optional[np.ndarray] = None, 
+                   c_ops: Optional[list] = []) -> float:
         """
         Compute the state transfer fidelity with Lindblad master equation. Depending on whether initial/final states are explicitly 
         given, then the time evolution is constructed. If integers of None are given then eigenstate evolution is assumed.
@@ -79,15 +89,20 @@ class Dynamics:
 
         """
         if initial_state is None and final_state is None:
-            _, init_eigenstates = qt.Qobj(self._H_func(self._control_pulse[0], **self._parameters)).eigenstates()
+            init_kwargs = {self._control_name: self._control_pulse[0], **self._parameters}
+            _, init_eigenstates = qt.Qobj(self._H_func(**init_kwargs)).eigenstates()
             psi_init = init_eigenstates[self._initial_state]
 
-            _, final_eigenstates = qt.Qobj(self._H_func(self._control_pulse[-1], **self._parameters)).eigenstates()
+            final_kwargs = {self._control_name: self._control_pulse[-1], **self._parameters}
+            _, final_eigenstates = qt.Qobj(self._H_func(**final_kwargs)).eigenstates()
             psi_target = final_eigenstates[self._final_state]
 
         elif isinstance(initial_state, np.ndarray) and isinstance(final_state, np.ndarray):
-            if initial_state.shape[0] != self._H_func(0, **self._parameters).shape[0] or final_state.shape[0] != self._H_func(0, **self._parameters).shape[0]:
-                raise ValidationError(f"Initial and final states must have the same dimension as the Hamiltonian. Shape of Hamiltonian: {self._H_func(0, **self._parameters).shape}. Shape of initial state: {initial_state.shape}") 
+            dummy_kwargs = {self._control_name: 0, **self._parameters}
+            ham_shape = self._H_func(**dummy_kwargs).shape
+
+            if initial_state.shape[0] != ham_shape[0] or final_state.shape[0] != ham_shape[0]:
+                raise ValidationError(f"Initial and final states must have the same dimension as the Hamiltonian. Shape of Hamiltonian: {ham_shape}. Shape of initial state: {initial_state.shape}") 
             
             psi_init = qt.Qobj(initial_state)
             psi_target = qt.Qobj(final_state)
