@@ -4,7 +4,7 @@ from typing import Tuple, Optional, Union, Callable, Any
 import numpy as np
 import qutip as qt
 
-from geodesiq import Hamiltonian
+from .hamiltonian import Hamiltonian
 from .exceptions import ValidationError
 
 
@@ -42,7 +42,7 @@ class Dynamics:
 
     def _get_ham(self, t: float, args: dict) -> qt.Qobj:
         """
-        Construct the time-dependent Hamiltonian using QuTiP QObj. 
+        Construct the time-dependent Hamiltonian using QuTiP Qobj.
         """
         # x_array = args["pulse"]
         # t_array = args["times"]
