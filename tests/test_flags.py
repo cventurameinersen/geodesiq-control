@@ -195,4 +195,3 @@ class TestAll:
     def test_all_true_on_empty_flags(self):
         f = Flags()
         assert f.all() is True  # vacuously true
-

@@ -6,13 +6,8 @@ from scipy.integrate import solve_ivp, romb
 from scipy.interpolate import interp1d
 
 from ._utils import Flags, build_diab
-from .exceptions import (
-    ImmutableConfigurationError,
-    MissingControlParameterError,
-    InvalidControlParameterError,
-    ValidationError,
-    SolverError,
-)
+from .exceptions import (ImmutableConfigurationError, MissingControlParameterError, InvalidControlParameterError,
+                         ValidationError, SolverError, )
 from .pulses import PulseControl
 
 
@@ -188,7 +183,7 @@ class Hamiltonian:
 
         self._initial_state = value
 
-        if self._final_state is None:  # If not final state, assume for the moment that is the same as the intial one
+        if self._final_state is None:  # If not final state, assume for the moment that is the same as the initial one
             self.final_state = value
 
         self._flags['metric_computed'] = False  # Reset the  metric computed flag if the initial state index changes
@@ -413,14 +408,9 @@ class Hamiltonian:
         self.dia_beta = dia_beta
         self.num_steps = num_steps
 
-    def solve_problem(
-            self,
-            pulse_accuracy: int = 1000,
-            solver: Optional[Callable] = None,
-            solver_kwargs: Optional[dict] = None,
-            metric_integrator: Optional[Callable] = None,
-            metric_integrator_kwargs: Optional[dict] = None,
-    ):
+    def solve_problem(self, pulse_accuracy: int = 1000, solver: Optional[Callable] = None,
+                      solver_kwargs: Optional[dict] = None, metric_integrator: Optional[Callable] = None,
+                      metric_integrator_kwargs: Optional[dict] = None, ):
         """
         Solve the optimization problem to find the optimal control pulse. This method computes the metric tensor based
         on the energies and matrix elements of the Hamiltonian, and then solves the ODE for the control pulse using the
@@ -446,25 +436,16 @@ class Hamiltonian:
         """
         self._check_control_parameters()
 
-        self._configure_integration(
-            solver=solver,
-            solver_kwargs=solver_kwargs,
-            metric_integrator=metric_integrator,
-            metric_integrator_kwargs=metric_integrator_kwargs,
-        )
+        self._configure_integration(solver=solver, solver_kwargs=solver_kwargs, metric_integrator=metric_integrator,
+                                    metric_integrator_kwargs=metric_integrator_kwargs, )
 
         self._solve_eigenproblem()
         self._compute_metric_tensor()
 
         self._solve_ode(pulse_accuracy)
 
-    def _configure_integration(
-            self,
-            solver: Optional[Callable],
-            solver_kwargs: Optional[dict],
-            metric_integrator: Optional[Callable],
-            metric_integrator_kwargs: Optional[dict],
-    ):
+    def _configure_integration(self, solver: Optional[Callable], solver_kwargs: Optional[dict],
+                               metric_integrator: Optional[Callable], metric_integrator_kwargs: Optional[dict], ):
         selected_solver = solve_ivp if solver is None else solver
         selected_metric_integrator = romb if metric_integrator is None else metric_integrator
         if solver_kwargs is None:
@@ -488,9 +469,7 @@ class Hamiltonian:
             raise ValidationError("metric_integrator must be a callable integration function.")
 
         if (
-                selected_metric_integrator is not self._metric_integrator
-                or selected_metric_integrator_kwargs != self._metric_integrator_kwargs
-        ):
+                selected_metric_integrator is not self._metric_integrator or selected_metric_integrator_kwargs != self._metric_integrator_kwargs):
             self._metric_integrator = selected_metric_integrator
             self._metric_integrator_kwargs = selected_metric_integrator_kwargs
             self._flags['metric_computed'] = False
@@ -529,7 +508,6 @@ class Hamiltonian:
             [self.H_func(**{self.control_name: lam, **self._parameters}) for lam in self._control_pulse])
 
         self._energies, eigenvectors = np.linalg.eigh(full_hamiltonian)
-        
 
         if self._flag_numerical_partial_H:
             # Compute the numerical partial derivative of H with respect to the control parameter
@@ -566,8 +544,7 @@ class Hamiltonian:
             self._a_tilde = float(self._metric_integrator(metric_values, dx=dx, **self._metric_integrator_kwargs))
         except TypeError as exc:
             raise ValidationError(
-                "Invalid metric_integrator call: ensure it accepts arguments like (values, dx=..., **kwargs)."
-            ) from exc
+                "Invalid metric_integrator call: ensure it accepts arguments like (values, dx=..., **kwargs).") from exc
 
         self._flags['metric_computed'] = True  # Mark the metric as computed to avoid recomputation
 
@@ -670,8 +647,7 @@ class Hamiltonian:
             sol = self._solver(model, [0, 1], [self._control_pulse[0]], t_eval=s, **kwargs)
         except TypeError as exc:
             raise ValidationError(
-                "Invalid solver call: ensure solver accepts (fun, t_span, y0, t_eval=..., **kwargs)."
-            ) from exc
+                "Invalid solver call: ensure solver accepts (fun, t_span, y0, t_eval=..., **kwargs).") from exc
 
         if hasattr(sol, "success") and not sol.success:
             raise SolverError(getattr(sol, "message", "ODE solver failed."))
@@ -707,8 +683,8 @@ class Hamiltonian:
                                                "Please set them using set_control(...).")
 
     def plot_eigenvalues(self, fig=None, ax=None, legend: bool = True, legend_kwargs: Optional[dict] = None,
-                         xlabel: Optional[str] = None, ylabel: Optional[str] = None,
-                         title: Optional[str] = None, **plot_kwargs):
+                         xlabel: Optional[str] = None, ylabel: Optional[str] = None, title: Optional[str] = None,
+                         **plot_kwargs):
         """
         Plot Hamiltonian eigenvalues as a function of the control parameter.
 
