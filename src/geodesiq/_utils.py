@@ -20,10 +20,12 @@ class Flags:
     >>> flags["hessian"]   # False  (grandparent is down)
     """
 
-    def __init__(self):
+    def __init__(self, _verbose: bool = False):
         self._values: dict[str, bool] = {}
         self._parents: dict[str, list[str]] = {}
         self._children: dict[str, list[str]] = {}
+
+        self._verbose = _verbose
 
     # ------------------------------------------------------------------
     # Public API
@@ -87,6 +89,10 @@ class Flags:
             If *name* is not registered.
         """
         self._check_exists(name)
+
+        if self._verbose:
+            print(f"Getting flag '{name}': stored value={self._values[name]}")
+
         return self._values[name]
 
     def set(self, name: str, value: bool) -> None:
@@ -111,8 +117,17 @@ class Flags:
             if not value:
                 self.set(child, False)
 
+        if self._verbose:
+            print(f"Set flag '{name}' to {value}. Updated children: {self._children[name]}")
+
     def all(self) -> bool:
         """Return ``True`` if all flags are effectively up."""
+
+        if self._verbose:
+            print("Checking if all flags are effectively up:")
+            for name in self._values:
+                print(f"  {name}: {self.get(name)}")
+
         return all(self.get(name) for name in self._values)
 
     # ------------------------------------------------------------------

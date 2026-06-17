@@ -144,6 +144,11 @@ class TestSetParameters:
         bare_ham.set_parameters(gamma=1.0)
         assert bare_ham._parameters == {"delta": 0.5, "gamma": 1.0}
 
+    def test_set_parameters_same_values_keeps_eigenproblem_flag(self, configured_ham):
+        configured_ham._flags["eigenproblem_solved"] = True
+        configured_ham.set_parameters(delta=0.5)
+        assert configured_ham._flags["eigenproblem_solved"] is True
+
     def test_set_parameters_resets_eigenproblem_flag(self, configured_ham):
         configured_ham._flags["eigenproblem_solved"] = True
         configured_ham.set_parameters(delta=2.0)
@@ -252,6 +257,21 @@ class TestSolveProblem:
         np.testing.assert_allclose(sol[0], configured_ham.pulse_initial, atol=1e-4)
         np.testing.assert_allclose(sol[-1], configured_ham.pulse_final, atol=1e-1)
 
+    def test_solve_problem_recomputes_ode_when_pulse_accuracy_changes(self, configured_ham):
+        configured_ham.solve_problem(pulse_accuracy=25)
+        first_s = configured_ham._s.copy()
+        first_sol = configured_ham._control_sol.copy()
+        assert configured_ham._previous_pulse_accuracy == 25
+
+        configured_ham.solve_problem(pulse_accuracy=60)
+
+        assert configured_ham._flags["ode_solved"] is True
+        assert configured_ham._previous_pulse_accuracy == 60
+        assert first_s.shape == (25,)
+        assert first_sol.shape == (25,)
+        assert configured_ham._s.shape == (60,)
+        assert configured_ham._control_sol.shape == (60,)
+
     def test_solve_problem_with_numerical_partial(self):
         """When no analytical partial is given, the numerical derivative is used."""
         ham = Hamiltonian(lz_hamiltonian)  # no partial_H_func
@@ -276,10 +296,8 @@ class TestSolveProblem:
             calls["kwargs"] = kwargs
             return solve_ivp(fun, t_span, y0, t_eval=t_eval, **kwargs)
 
-        configured_ham.solve_problem(
-            solver=custom_solver,
-            solver_kwargs={"method": "RK23", "rtol": 1e-5, "atol": 1e-7},
-        )
+        configured_ham.solve_problem(solver=custom_solver,
+                                     solver_kwargs={"method": "RK23", "rtol": 1e-5, "atol": 1e-7}, )
 
         assert calls["kwargs"]["method"] == "RK23"
         assert np.isclose(calls["kwargs"]["rtol"], 1e-5)
@@ -293,10 +311,8 @@ class TestSolveProblem:
             calls["scale"] = scale
             return np.trapezoid(values, dx=dx) * scale
 
-        configured_ham.solve_problem(
-            metric_integrator=custom_metric_integrator,
-            metric_integrator_kwargs={"scale": 1.0},
-        )
+        configured_ham.solve_problem(metric_integrator=custom_metric_integrator,
+                                     metric_integrator_kwargs={"scale": 1.0}, )
 
         dx = float(np.abs(configured_ham._control_pulse[1] - configured_ham._control_pulse[0]))
         expected = np.trapezoid(np.sqrt(configured_ham._metric_tensor), dx=dx)
@@ -347,10 +363,8 @@ class TestEigenGetters:
 
         assert pulse is not None
         assert configured_ham._flags["eigenproblem_solved"] is True
-        np.testing.assert_allclose(
-            pulse,
-            np.linspace(configured_ham.pulse_initial, configured_ham.pulse_final, configured_ham.num_steps),
-        )
+        np.testing.assert_allclose(pulse, np.linspace(configured_ham.pulse_initial, configured_ham.pulse_final,
+                                                      configured_ham.num_steps), )
 
     def test_eigenenergies_property_raises_when_eigensystem_controls_missing(self, bare_ham):
         with pytest.raises(MissingControlParameterError, match="eigensystem"):

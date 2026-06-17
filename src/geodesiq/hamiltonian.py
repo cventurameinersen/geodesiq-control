@@ -20,7 +20,7 @@ class Hamiltonian:
     """
 
     def __init__(self, H_func: Callable[[Any], np.ndarray],
-                 partial_H_func: Optional[Callable[[Any], np.ndarray]] = None):
+                 partial_H_func: Optional[Callable[[Any], np.ndarray]] = None, _flags_verbose: bool = False):
         """
         Initialize the Hamiltonian class with the Hamiltonian function and its partial derivative (if provided).
 
@@ -39,7 +39,7 @@ class Hamiltonian:
         self._partial_H_func = partial_H_func
 
         # Initialize flags needed to track the state of the computations
-        self._flags = Flags()
+        self._flags = Flags(_verbose=_flags_verbose)
         self._flags.add('eigenproblem_solved')
         self._flags.add('dia_list_computed')
         self._flags.add('metric_computed', parents=['eigenproblem_solved', 'dia_list_computed'])
@@ -83,10 +83,15 @@ class Hamiltonian:
         self._solver_kwargs = {}
         self._metric_integrator = romb
         self._metric_integrator_kwargs = {}
+        self._previous_pulse_accuracy = None  # To track changes in pulse accuracy for ODE solving
+
+    def __call__(self, *args, **kwargs):
+        # Return the Hamiltonian function if the object is called directly, allowing for easy evaluation of the
+        #   Hamiltonian at specific control values
+        return self.H_func(*args, **{**kwargs, **self._parameters})
 
     # Setters and getters are defined for the critical attributes of the Hamiltonian class, so we have control over how
     # the user modifies them. It is important that the correct flags are updated when these attributes are changed
-
     @property
     def H_func(self):
         return self._H_func
@@ -350,8 +355,14 @@ class Hamiltonian:
         e.g., set_parameters(param1=value1, param2=value2, ...), and they will be stored. If a single parameter is
         updated, others will not be affected.
         """
-        self._parameters = {**self._parameters, **params}  # Update the _parameters with the new values
-        self._flags['eigenproblem_solved'] = False  # Reset the eigenproblem solved flag
+
+        new_params = {**self._parameters, **params}
+
+        if new_params == self._parameters:  # If the new parameters are the same as the current ones, do nothing
+            return
+        else:
+            self._parameters = new_params  # Update the _parameters with the new values
+            self._flags['eigenproblem_solved'] = False  # Reset the eigenproblem solved flag
 
     def set_control(self, control_name: Optional[str] = None, pulse_initial: Optional[float] = None,
                     pulse_final: Optional[float] = None, initial_state: Optional[int] = None,
@@ -499,10 +510,10 @@ class Hamiltonian:
         stored in self.eigenenergies and self._matrix_elements for later use in computing the metric tensor.
         """
 
-        self._control_pulse = np.linspace(self.pulse_initial, self.pulse_final, num=self.num_steps)
-
         if self._flags['eigenproblem_solved']:
             return  # If the eigenproblem is already solved, skip the computation
+
+        self._control_pulse = np.linspace(self.pulse_initial, self.pulse_final, num=self.num_steps)
 
         full_hamiltonian = np.array(
             [self.H_func(**{self.control_name: lam, **self._parameters}) for lam in self._control_pulse])
@@ -627,6 +638,10 @@ class Hamiltonian:
         """
         Solve the ODE for the control pulse using the computed metric tensor and the normalization factor a_tilde.
         """
+
+        if self._previous_pulse_accuracy != pulse_accuracy:
+            self._flags['ode_solved'] = False  # Reset the ODE solved flag if the pulse accuracy changes
+
         if self._flags['ode_solved']:
             return  # If the ODE is already solved, skip the computation
 
@@ -662,6 +677,7 @@ class Hamiltonian:
         y_arr = np.asarray(y_arr)
         self._s = np.asarray(t_arr)
         self._control_sol = y_arr[0] if y_arr.ndim == 2 else y_arr
+        self._previous_pulse_accuracy = pulse_accuracy
         self._flags['ode_solved'] = True
 
     def _check_eigensystem_parameters(self):

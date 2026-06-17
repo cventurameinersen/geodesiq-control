@@ -195,3 +195,42 @@ class TestAll:
     def test_all_true_on_empty_flags(self):
         f = Flags()
         assert f.all() is True  # vacuously true
+
+
+# ---------------------------------------------------------------------------
+# Verbose output
+# ---------------------------------------------------------------------------
+
+class TestVerbose:
+    def test_get_prints_when_verbose(self, capsys):
+        f = Flags(_verbose=True)
+        f.add("A", value=True)
+
+        assert f.get("A") is True
+        captured = capsys.readouterr()
+        assert "Getting flag 'A': stored value=True" in captured.out
+
+    def test_set_prints_when_verbose_with_propagation(self, capsys):
+        f = Flags(_verbose=True)
+        f.add("A", value=True)
+        f.add("B", value=True, parent="A")
+
+        f.set("A", False)
+        captured = capsys.readouterr()
+
+        assert "Set flag 'A' to False." in captured.out
+        assert "Set flag 'B' to False." in captured.out
+
+    def test_all_prints_status_when_verbose(self, capsys):
+        f = Flags(_verbose=True)
+        f.add("A", value=True)
+        f.add("B", value=False)
+
+        assert f.all() is False
+        captured = capsys.readouterr()
+
+        assert "Checking if all flags are effectively up:" in captured.out
+        assert "Getting flag 'A': stored value=True" in captured.out
+        assert "Getting flag 'B': stored value=False" in captured.out
+        assert "A: True" in captured.out
+        assert "B: False" in captured.out
