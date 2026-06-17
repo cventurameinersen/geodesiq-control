@@ -129,42 +129,45 @@ class PulseControl:
 
         return frequencies, magnitude
 
-    def filtered_pulse(self, cutoff_freq: float = 1e9, filter_order: int = 3) -> Tuple[np.ndarray, np.ndarray]:
+    def filtered_pulse(self, cutoff_freq, filter_order: int = 3) -> Tuple[np.ndarray, np.ndarray]:
         """
         Apply a low-pass Butterworth filter to the control pulse.
 
         Parameters
         ----------
         cutoff_freq: float
-            Cutoff frequency in Hz (default: 1 GHz = 1e9 Hz).
+            Cutoff frequency in units of 1 / time (e.g., Hz if time is in seconds) for the low-pass Butterworth filter.
         filter_order: int
             Order of the Butterworth filter.
 
         Returns
         -------
+        pulse_times: np.ndarray
+            Rescaled time array corresponding to the filtered control pulse.
         filtered_pulse: np.ndarray
             Returns the (butterworth-)filtered control pulse.
-
         """
 
-        # ToDo: Review the implementation
+        if not isinstance(filter_order, int) or filter_order < 1:
+            raise ValidationError("filter_order must be a positive integer.")
+
         # Compute the sampling rate from the rescaled time array
-        dt = np.mean(np.diff(self._pulse_times))
+        dt = float(np.abs(self._pulse_times[1] - self._pulse_times[0]))  # Uniform spacing by construction
+
         sampling_rate = 1.0 / dt
         nyquist_freq = sampling_rate / 2.0
 
-        # Normalize the cutoff frequency to the Nyquist frequency
-        normalized_cutoff = cutoff_freq / nyquist_freq
+        if cutoff_freq <= 0:
+            raise ValidationError(f"Cutoff frequency must be positive. Given: {cutoff_freq}")
 
-        # Ensure the normalized cutoff frequency is within valid range
-        if normalized_cutoff >= 1.0:
-            normalized_cutoff = 0.99  # raise NumericalStabilityWarning(  #     f"Normalized cutoff frequency {normalized_cutoff:.2} is too high. Setting to 0.99 to avoid instability.")
+        if cutoff_freq >= nyquist_freq:
+            raise ValidationError(f"cutoff_freq must be smaller than the Nyquist frequency {nyquist_freq:.5g}.")
 
-        # Design Butterworth filter coefficients
-        b, a = sp.signal.butter(filter_order, normalized_cutoff, btype='low')
+        # Design Butterworth filter
+        sos = sp.signal.butter(N=filter_order, Wn=cutoff_freq, btype="low", fs=sampling_rate, output="sos")
 
         # Apply the filter to the pulse using filtfilt for zero-phase filtering
-        filtered_pulse = sp.signal.filtfilt(b, a, self._pulse)
+        filtered_pulse = sp.signal.sosfiltfilt(sos, self._pulse)
 
         return self._pulse_times, filtered_pulse
 
@@ -200,7 +203,7 @@ class PulseControl:
 
         return fig, ax
 
-    def export_pulse(self, filename: str = None, data_type: str = 'npy', overwrite: bool = False) -> str:
+    def export_pulse(self, filename: str, file_extension: str = 'npy', overwrite: bool = False):
         """
         Export (real-time) pulse data to a (npy, txt) file.
 
@@ -208,36 +211,33 @@ class PulseControl:
         ----------
         filename: str
             Name for the data file saved.
-        data_type: str
-            Data type the pulse should be stored in (ie. '.txt', '.npy')
+        file_extension: str
+            Data type the pulse should be stored in (i.e. 'txt', 'npy'). Default is 'npy'.
         overwrite: bool
             Ensures accidental overwrites.
-
-        Returns
-        -------
-        filename: str
-
         """
 
         t, pulse = self._pulse_times, self._pulse
 
-        # Checking whether filename is given and whether it is already saved as such
-        if filename is None:
-            raise MissingArgsError("Missing filename for saving.")
+        # Remove possible file_extension starting with a dot
+        if file_extension.startswith('.'):
+            file_extension = file_extension[1:]
 
-        filename_string = filename + "." + data_type
+        filename_string = filename + "." + file_extension
         if os.path.exists(filename_string) and not overwrite:
             raise IOErrorGeodesiQ(
                 f"File already exists (choose overwrite=True to remove safety check.): {filename_string}")
 
         # Save data depending on users preference
-        if data_type == 'npy':
+        if file_extension == 'npy':
             data = {"t": t, "pulse": pulse}
             np.save(filename, data)
-        elif data_type == 'txt':
+        elif file_extension == 'txt':
             data = np.column_stack((t, pulse))
             np.savetxt(filename, data, delimiter=",", header="t,pulse", comments="", fmt="%.8f")
         else:
-            raise MissingArgsError(f"Unsupported data_type '{data_type}'. Supported types are: 'npy' and 'txt'. ")
+            raise MissingArgsError(f"Unsupported data_type '{file_extension}'. Supported types are: 'npy' and 'txt'. ")
 
-        print(f"[{PACKAGE_NAME}] File saved as '{filename}.{data_type}' type.")
+        # ToDo: Add option to export pulse data in csv
+
+        print(f"[{PACKAGE_NAME}] File saved as '{filename}.{file_extension}' type.")

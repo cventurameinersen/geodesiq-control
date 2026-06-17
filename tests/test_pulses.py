@@ -111,7 +111,7 @@ def test_export_pulse_as_npy(default_pulse, tmp_path):
     """Verify .npy file export works seamlessly using a temporary test directory."""
     
     test_file_base = os.path.join(tmp_path, "test_pulse")
-    returned_filename = default_pulse.export_pulse(filename=test_file_base, data_type="npy")
+    returned_filename = default_pulse.export_pulse(filename=test_file_base, file_extension="npy")
     expected_full_path = test_file_base + ".npy"
     assert os.path.exists(expected_full_path)
     
