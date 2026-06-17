@@ -2,8 +2,9 @@
 # 1. Import the package
 # ============================================
 
-import geodesiq as gq
 import numpy as np
+
+import geodesiq as gq
 
 
 # ============================================

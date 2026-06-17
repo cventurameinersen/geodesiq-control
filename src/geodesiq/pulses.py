@@ -192,7 +192,7 @@ class PulseControl:
 
         t, pulse = self._pulse_times, self._pulse
 
-        fig, ax = plt.subplots(figsize=(5, 3))
+        fig, ax = plt.subplots()
         ax.plot(t, pulse, **plot_kwargs)
         ax.set_xlabel('Time $t$')
         ax.set_ylabel('Control Pulse')
