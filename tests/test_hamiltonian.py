@@ -74,6 +74,35 @@ class TestInit:
 
 
 # ---------------------------------------------------------------------------
+# __call__
+# ---------------------------------------------------------------------------
+
+class TestCallable:
+    def test_call_delegates_to_h_func_with_runtime_kwargs(self, bare_ham):
+        ham_matrix = bare_ham(lam=2.0, delta=0.25)
+        expected = np.array([[2.0, 0.25], [0.25, -2.0]])
+
+        np.testing.assert_allclose(ham_matrix, expected)
+
+    def test_call_uses_parameters_set_via_set_parameters(self, bare_ham):
+        bare_ham.set_parameters(delta=0.75)
+
+        ham_matrix = bare_ham(lam=-1.0)
+        expected = np.array([[-1.0, 0.75], [0.75, 1.0]])
+
+        np.testing.assert_allclose(ham_matrix, expected)
+
+    def test_call_stored_parameters_override_runtime_kwargs(self, bare_ham):
+        bare_ham.set_parameters(delta=0.6)
+
+        # __call__ merges kwargs as {**kwargs, **self._parameters}; stored params take precedence.
+        ham_matrix = bare_ham(lam=1.5, delta=0.1)
+        expected = np.array([[1.5, 0.6], [0.6, -1.5]])
+
+        np.testing.assert_allclose(ham_matrix, expected)
+
+
+# ---------------------------------------------------------------------------
 # Property setters – validation
 # ---------------------------------------------------------------------------
 
