@@ -232,10 +232,10 @@ class PulseControl:
         # Save data depending on users preference
         if file_extension == 'npy':
             data = {"t": t, "pulse": pulse}
-            np.save(filename, data)
+            np.save(filename, data)  # np.save automatically adds .npy extension
         elif file_extension == 'txt':
             data = np.column_stack((t, pulse))
-            np.savetxt(filename, data, delimiter=",", header="t,pulse", comments="", fmt="%.8f")
+            np.savetxt(filename_string, data, delimiter=",", header="t,pulse", comments="", fmt="%.8f")
         else:
             raise MissingArgsError(f"Unsupported data_type '{file_extension}'. Supported types are: 'npy' and 'txt'. ")
 
