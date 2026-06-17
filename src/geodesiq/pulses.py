@@ -14,8 +14,9 @@ from .exceptions import MissingArgsError, ValidationError, IOErrorGeodesiQ
 
 class PulseControl:
     """
-    A class to represent a control pulse for quantum optimal control. This class depends on the control pulse computed in the Hamiltonian class.
-    The class allows for the synthesis of the pulse, filtering, and plotting of the pulse shape and its Fourier spectrum.
+    A class to represent a control pulse for quantum optimal control. This class depends on the control pulse computed
+    in the Hamiltonian class. The class allows for the synthesis of the pulse, filtering, and plotting of the pulse
+    shape and its Fourier spectrum.
     """
 
     def __init__(self, pulse: np.ndarray, duration: float, method: Optional[str] = None,
