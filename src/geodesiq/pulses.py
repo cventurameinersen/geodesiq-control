@@ -10,7 +10,6 @@ from scipy.interpolate import interp1d
 
 from ._meta import PACKAGE_NAME
 from .exceptions import MissingArgsError, ValidationError, IOErrorGeodesiQ
-from .warnings import NumericalStabilityWarning
 
 
 class PulseControl:
@@ -19,7 +18,7 @@ class PulseControl:
     The class allows for the synthesis of the pulse, filtering, and plotting of the pulse shape and its Fourier spectrum.
     """
 
-    def __init__(self, pulse: np.ndarray, duration: float, method: Optional[str] = None, 
+    def __init__(self, pulse: np.ndarray, duration: float, method: Optional[str] = None,
                  pulse_args: Optional[tuple] = None, pulse_kwargs: Optional[dict] = None):
         """
         Initialize the PulseControl object with the control pulse and the rescaled time array as inputs.
@@ -38,15 +37,13 @@ class PulseControl:
             Keyword arguments for the pulse synthesis (e.g., duration, filter parameters).
         """
 
-        
         self._pulse = pulse
         self._duration = duration
-        self._pulse_times = duration * np.linspace(0, 1, len(pulse))  # Rescaled time array corresponding to the pulse values 
+        self._pulse_times = duration * np.linspace(0, 1,
+                                                   len(pulse))  # Rescaled time array corresponding to the pulse values
         self._method = method
         self._pulse_args = pulse_args if pulse_args is not None else ()
         self._pulse_kwargs = pulse_kwargs if pulse_kwargs is not None else {}
-
-
 
     def __call__(self):
         """
@@ -66,8 +63,7 @@ class PulseControl:
         """
 
         if self._method is None:
-            return self # Return object if no specific method was given
-
+            return self  # Return object if no specific method was given
 
         # if not self._pulse_args:
         #     raise MissingArgsError("No pulse arguments specified.")
@@ -82,19 +78,9 @@ class PulseControl:
         method = methods[self._method]
         return method(*self._pulse_args, **self._pulse_kwargs)
 
-
-
-
-
-
-
-
-
-# ------------------------------------------------------------
-#               Methods of PulseControl class
-# ------------------------------------------------------------
-
-
+    # ------------------------------------------------------------
+    #               Methods of PulseControl class
+    # ------------------------------------------------------------
 
     def discretized_pulse(self, linear_steps: int = 4) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -134,18 +120,12 @@ class PulseControl:
             Magnitude spectrum of the control pulse (absolute value of the FFT).
 
         """
-
         # Compute the sampling rate from the rescaled time array
-        dt = np.mean(np.diff(self._pulse_times))
+        dt = np.abs(self._pulse_times[1] - self._pulse_times[0])  # Uniform spacing by construction
 
         # Compute FFT of the pulse and corresponding frequencies
-        fft_values = np.fft.fft(self._pulse)
-        freqs = np.fft.fftfreq(len(self._pulse), dt)
-
-        # Get only positive frequencies and their magnitudes
-        positive_freq_idx = freqs >= 0
-        frequencies = freqs[positive_freq_idx]
-        magnitude = np.abs(fft_values[positive_freq_idx])
+        magnitude = np.abs(np.fft.rfft(self._pulse, norm='ortho'))
+        frequencies = np.fft.rfftfreq(len(self._pulse), dt)
 
         return frequencies, magnitude
 
@@ -167,6 +147,7 @@ class PulseControl:
 
         """
 
+        # ToDo: Review the implementation
         # Compute the sampling rate from the rescaled time array
         dt = np.mean(np.diff(self._pulse_times))
         sampling_rate = 1.0 / dt
@@ -177,9 +158,7 @@ class PulseControl:
 
         # Ensure the normalized cutoff frequency is within valid range
         if normalized_cutoff >= 1.0:
-            normalized_cutoff = 0.99
-            # raise NumericalStabilityWarning(
-            #     f"Normalized cutoff frequency {normalized_cutoff:.2} is too high. Setting to 0.99 to avoid instability.")
+            normalized_cutoff = 0.99  # raise NumericalStabilityWarning(  #     f"Normalized cutoff frequency {normalized_cutoff:.2} is too high. Setting to 0.99 to avoid instability.")
 
         # Design Butterworth filter coefficients
         b, a = sp.signal.butter(filter_order, normalized_cutoff, btype='low')
@@ -209,7 +188,7 @@ class PulseControl:
 
         t, pulse = self._pulse_times, self._pulse
 
-        fig, ax = plt.subplots(figsize=(5,3))
+        fig, ax = plt.subplots(figsize=(5, 3))
         ax.plot(t, pulse, **plot_kwargs)
         ax.set_xlabel('Time $t$')
         ax.set_ylabel('Control Pulse')
@@ -248,8 +227,9 @@ class PulseControl:
 
         filename_string = filename + "." + data_type
         if os.path.exists(filename_string) and not overwrite:
-            raise IOErrorGeodesiQ(f"File already exists (choose overwrite=True to remove safety check.): {filename_string}")
-        
+            raise IOErrorGeodesiQ(
+                f"File already exists (choose overwrite=True to remove safety check.): {filename_string}")
+
         # Save data depending on users preference
         if data_type == 'npy':
             data = {"t": t, "pulse": pulse}
@@ -261,4 +241,3 @@ class PulseControl:
             raise MissingArgsError(f"Unsupported data_type '{data_type}'. Supported types are: 'npy' and 'txt'. ")
 
         print(f"[{PACKAGE_NAME}] File saved as '{filename}.{data_type}' type.")
-
