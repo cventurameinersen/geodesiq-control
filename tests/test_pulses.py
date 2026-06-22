@@ -8,7 +8,6 @@ from matplotlib.figure import Figure
 from geodesiq.exceptions import ValidationError
 from geodesiq.pulses import PulseControl
 
-
 # ------------------------------------------------------------
 # Ramp pulse as pytest.fixtures
 # ------------------------------------------------------------
@@ -90,6 +89,24 @@ def test_plot_pulse_without_showing(default_pulse):
     assert isinstance(fig, Figure)
     assert isinstance(ax, Axes)
     assert ax.get_xlabel() == 'Time $t$'
+
+
+def test_plot_pulse_with_show_invokes_matplotlib_show(default_pulse, monkeypatch):
+    """The show=True branch should call matplotlib.pyplot.show()."""
+    import matplotlib.pyplot as plt
+
+    called = {"count": 0}
+
+    def fake_show():
+        called["count"] += 1
+
+    monkeypatch.setattr(plt, "show", fake_show)
+
+    fig, ax = default_pulse.plot_pulse(show=True)
+
+    assert called["count"] == 1
+    assert isinstance(fig, Figure)
+    assert isinstance(ax, Axes)
 
 
 # ------------------------------------------------------------
