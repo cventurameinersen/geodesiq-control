@@ -135,8 +135,8 @@ class TestPropagation:
 
     def test_restoring_parent_does_not_auto_restore_child(self, simple_flags):
         """Setting parent back to True should NOT automatically restore children."""
-        simple_flags["A"] = False   # propagates False down
-        simple_flags["A"] = True    # restore parent only
+        simple_flags["A"] = False  # propagates False down
+        simple_flags["A"] = True  # restore parent only
         assert simple_flags["B"] is False
         assert simple_flags["C"] is False
 
@@ -234,3 +234,20 @@ class TestVerbose:
         assert "Getting flag 'B': stored value=False" in captured.out
         assert "A: True" in captured.out
         assert "B: False" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# __repr__
+# ---------------------------------------------------------------------------
+
+class TestRepr:
+    def test_repr_includes_flag_names_and_parent_info(self):
+        f = Flags()
+        f.add("A", value=True)
+        f.add("B", value=False, parent="A")
+
+        rendered = repr(f)
+
+        assert "A: stored=True" in rendered
+        assert "B: stored=False" in rendered
+        assert "parents=['A']" in rendered
