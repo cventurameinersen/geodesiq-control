@@ -1,6 +1,7 @@
 """Public package API for `geodesiq`."""
 
 from ._meta import __version__
+from .about import about
 from .dynamics import Dynamics
 from .exceptions import (
     ComputationError,
@@ -23,6 +24,7 @@ __all__ = [
     "Hamiltonian",
     "PulseControl",
     "Dynamics",
+    "about",
     "GeodesiQError",
     "ValidationError",
     "ConfigurationError",
