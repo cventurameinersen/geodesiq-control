@@ -1,5 +1,5 @@
-import os
-from typing import Tuple, Optional
+from pathlib import Path
+from typing import Any, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,7 +9,7 @@ from matplotlib.figure import Figure
 from scipy.interpolate import interp1d
 
 from ._meta import PACKAGE_NAME
-from .exceptions import MissingArgsError, ValidationError, IOErrorGeodesiQ
+from .exceptions import IOErrorGeodesiQ, MissingArgsError, ValidationError
 
 
 class PulseControl:
@@ -218,27 +218,31 @@ class PulseControl:
             Ensures accidental overwrites.
         """
 
-        t, pulse = self._pulse_times, self._pulse
-
         # Remove possible file_extension starting with a dot
         if file_extension.startswith('.'):
             file_extension = file_extension[1:]
 
-        filename_string = filename + "." + file_extension
-        if os.path.exists(filename_string) and not overwrite:
+        output_path = Path(filename)
+        if output_path.suffix != f".{file_extension}":
+            output_path = output_path.with_suffix(f".{file_extension}")
+
+        t: np.ndarray = np.asarray(self._pulse_times)
+        pulse: np.ndarray = np.asarray(self._pulse)
+
+        if output_path.exists() and not overwrite:
             raise IOErrorGeodesiQ(
-                f"File already exists (choose overwrite=True to remove safety check.): {filename_string}")
+                f"File already exists (choose overwrite=True to remove safety check.): {output_path}")
 
         # Save data depending on users preference
         if file_extension == 'npy':
-            data = {"t": t, "pulse": pulse}
-            np.save(filename, data)  # np.save automatically adds .npy extension
+            npy_payload: dict[str, Any] = {"t": t, "pulse": pulse}
+            np.save(output_path, np.array(npy_payload, dtype=object))
         elif file_extension == 'txt':
-            data = np.column_stack((t, pulse))
-            np.savetxt(filename_string, data, delimiter=",", header="t,pulse", comments="", fmt="%.8f")
+            txt_data: np.ndarray = np.column_stack((t, pulse))
+            np.savetxt(output_path, txt_data, delimiter=",", header="t,pulse", comments="", fmt="%.8f")
         else:
             raise MissingArgsError(f"Unsupported data_type '{file_extension}'. Supported types are: 'npy' and 'txt'. ")
 
         # ToDo: Add option to export pulse data in csv
 
-        print(f"[{PACKAGE_NAME}] File saved as '{filename}.{file_extension}' type.")
+        print(f"[{PACKAGE_NAME}] File saved as '{output_path}' type.")

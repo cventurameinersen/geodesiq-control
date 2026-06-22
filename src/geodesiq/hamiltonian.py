@@ -1,13 +1,18 @@
-from typing import Optional, Callable, Any
+from typing import Any, Callable, Optional
 
 import numpy as np
 from scipy.differentiate import jacobian
-from scipy.integrate import solve_ivp, romb
+from scipy.integrate import romb, solve_ivp
 from scipy.interpolate import interp1d
 
 from ._utils import Flags, build_diab
-from .exceptions import (ImmutableConfigurationError, MissingControlParameterError, InvalidControlParameterError,
-                         ValidationError, SolverError, )
+from .exceptions import (
+    ImmutableConfigurationError,
+    InvalidControlParameterError,
+    MissingControlParameterError,
+    SolverError,
+    ValidationError,
+)
 from .pulses import PulseControl
 
 
@@ -51,7 +56,7 @@ class Hamiltonian:
             self._flag_numerical_partial_H = True
 
         # Initialize _parameters and control settings
-        self._parameters = {}
+        self._parameters: dict[str, Any] = {}
         self._control_name = None
         self._pulse_initial = None
         self._pulse_final = None
@@ -80,9 +85,9 @@ class Hamiltonian:
 
         # Numerical integration configuration (user-overridable in solve_problem).
         self._solver = solve_ivp
-        self._solver_kwargs = {}
+        self._solver_kwargs: dict[str, Any] = {}
         self._metric_integrator = romb
-        self._metric_integrator_kwargs = {}
+        self._metric_integrator_kwargs: dict[str, Any] = {}
         self._previous_pulse_accuracy = None  # To track changes in pulse accuracy for ODE solving
 
     def __call__(self, *args, **kwargs):
@@ -480,7 +485,7 @@ class Hamiltonian:
             raise ValidationError("metric_integrator must be a callable integration function.")
 
         if (
-                selected_metric_integrator is not self._metric_integrator or selected_metric_integrator_kwargs != self._metric_integrator_kwargs):
+                selected_metric_integrator is not self._metric_integrator or selected_metric_integrator_kwargs != self._metric_integrator_kwargs):  # noqa: E501
             self._metric_integrator = selected_metric_integrator
             self._metric_integrator_kwargs = selected_metric_integrator_kwargs
             self._flags['metric_computed'] = False
@@ -645,6 +650,9 @@ class Hamiltonian:
         if self._flags['ode_solved']:
             return  # If the ODE is already solved, skip the computation
 
+        if self._control_pulse is None or self._metric_tensor is None or self._a_tilde is None:
+            raise SolverError("ODE cannot be solved before the control pulse and metric tensor are available.")
+
         sig = np.sign(self._control_pulse[1] - self._control_pulse[0])
 
         factor_interpolation = interp1d(self._control_pulse, self._a_tilde / np.sqrt(self._metric_tensor),
@@ -675,8 +683,8 @@ class Hamiltonian:
             raise SolverError("Solver output must expose 't' and 'y', or return a (t, y) tuple.")
 
         y_arr = np.asarray(y_arr)
-        self._s = np.asarray(t_arr)
-        self._control_sol = y_arr[0] if y_arr.ndim == 2 else y_arr
+        self._s = np.asarray(t_arr, dtype=float)
+        self._control_sol = np.asarray(y_arr[0] if y_arr.ndim == 2 else y_arr, dtype=float)
         self._previous_pulse_accuracy = pulse_accuracy
         self._flags['ode_solved'] = True
 
@@ -773,6 +781,8 @@ class Hamiltonian:
              An instance of the PulseControl class representing the synthesized control pulse.
         """
         self.solve_problem()
+        if self._control_sol is None:
+            raise SolverError("Cannot synthesize a pulse before the control solution is available.")
         self._pulse = PulseControl(self._control_sol, duration, method, pulse_args, pulse_kwargs)
         return self._pulse()
 
@@ -817,25 +827,30 @@ class Hamiltonian:
         the optimization problem. The summary can be used for logging, debugging, or displaying the current state of the
         Hamiltonian object.
         """
+        hamiltonian_params = (", ".join(
+            f"{key}: {value}" for key, value in self._parameters.items()) if self._parameters else "❌ not set")
+        alpha_beta = (f"({self.alpha if self.alpha is not None else '❌ not set'}, "
+                      f"{self.beta if self.beta is not None else '❌ not set'})")
+        diabatic_alpha_beta = ("("
+                               f"{self.dia_alpha if self.dia_alpha is not None else '❌ not set'}, "
+                               f"{self.dia_beta if self.dia_beta is not None else '❌ not set'}"
+                               ")")
+
         summary_lines = ["------------------ Hamiltonian Control Summary ------------------",
                          f"Hamiltonian: {'✅ set' if self.H_func is not None else '❌ not set'}",
                          f"Partial Hamiltonian: {'✅ set' if self.partial_H_func is not None else '❌ not set'}",
-                         f"Hamiltonian parameters: "
-                         f"{', '.join(key + ': ' + str(value) for key, value in self._parameters.items()) if self._parameters else '❌ not set'}",
+                         f"Hamiltonian parameters: {hamiltonian_params}",
                          f"Control name → {self.control_name if self.control_name is not None else '❌ not set'}",
                          f"Pulse initial → {self.pulse_initial if self.pulse_initial is not None else '❌ not set'}",
                          f"Pulse final → {self.pulse_final if self.pulse_final is not None else '❌ not set'}",
                          f"Initial state index →"
                          f" {self.initial_state if self.initial_state is not None else '❌ not set'}",
                          f"Final state index → {self.final_state if self.final_state is not None else '❌ not set'}",
-                         f"(Alpha, Beta) → ({self.alpha if self.alpha is not None else '❌ not set'}, "
-                         f"{self.beta if self.beta is not None else '❌ not set'})",
-                         f"(Diabatic Alpha, Diabatic Beta) → ({self.dia_alpha if self.dia_alpha is not None else '❌ not set'}, "
-                         f"{self.dia_beta if self.dia_beta is not None else '❌ not set'})",
+                         f"(Alpha, Beta) → {alpha_beta}", f"(Diabatic Alpha, Diabatic Beta) → {diabatic_alpha_beta}",
                          f"Eigenproblem solved → {'✅ yes' if self._flags['eigenproblem_solved'] else '❌ no'}",
                          f"Metric computed → {'✅ yes' if self._flags['metric_computed'] else '❌ no'}",
                          f"ODE solved → {'✅ yes' if self._flags['ode_solved'] else '❌ no'}",
-                         "---------------------------------------------------------------"]
+                         "---------------------------------------------------------------", ]
         return "\n".join(summary_lines)
 
     def print_summary(self):

@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Any, List, Optional
 
 import numpy as np
 import qutip as qt
@@ -23,32 +23,59 @@ class Dynamics:
         """
 
         # Attributes of the Hamiltonian instance
-        self._H_func = hamiltonian._H_func
-        self._parameters = hamiltonian._parameters
-        self._control_pulse = hamiltonian._control_pulse
-        self._control_sol = hamiltonian._control_sol
-        self._initial_state = hamiltonian._initial_state
-        self._final_state = hamiltonian._final_state
-        self._control_name = hamiltonian._control_name
+        self._H_func: Any = hamiltonian._H_func
+        self._parameters: dict[str, Any] = dict(hamiltonian._parameters)
+        self._control_pulse: np.ndarray | None = (
+            np.asarray(hamiltonian._control_pulse) if hamiltonian._control_pulse is not None else None
+        )
+        self._control_sol: np.ndarray | None = (
+            np.asarray(hamiltonian._control_sol) if hamiltonian._control_sol is not None else None
+        )
+        self._initial_state: int | None = hamiltonian._initial_state
+        self._final_state: int | None = hamiltonian._final_state
+        self._control_name: str | None = hamiltonian._control_name
+
+        if self._control_pulse is None or self._control_sol is None or self._control_name is None:
+            raise ValidationError(
+                "Dynamics requires a solved Hamiltonian with control pulse, control solution and control name set."
+            )
+
+        self._control_pulse = np.asarray(self._control_pulse, dtype=float)
+        self._control_sol = np.asarray(self._control_sol, dtype=float)
 
         self._duration = duration
-        self._pulse_times = duration * np.linspace(0, 1, len(self._control_sol))  # Real-time array
+        self._pulse_times: np.ndarray = duration * np.linspace(0, 1, len(self._control_sol))  # Real-time array
+
+    def _control_kwargs(self, control_value: float) -> dict[str, Any]:
+        control_name = self._control_name
+        assert control_name is not None
+        return {control_name: control_value, **self._parameters}
+
+    def _eigenstate(self, control_value: float, state_index: int) -> qt.Qobj:
+        hamiltonian = qt.Qobj(self._H_func(**self._control_kwargs(control_value)))
+        _, eigenstates = hamiltonian.eigenstates()
+        return eigenstates[state_index]
 
     def _get_ham(self, t: float) -> qt.Qobj:
         """
         Construct the time-dependent Hamiltonian using QuTiP Qobj.
         """
 
-        control_val_t = np.interp(t, self._pulse_times, self._control_sol)
-        ham_kwargs = {self._control_name: control_val_t, **self._parameters}
+        pulse_times: list[float] = np.asarray(self._pulse_times, dtype=float).tolist()
+        control_sol: list[float] = np.asarray(self._control_sol, dtype=float).tolist()
+        control_val_t = float(np.interp(t, pulse_times, control_sol))
 
-        return qt.Qobj(self._H_func(**ham_kwargs))
+        return qt.Qobj(self._H_func(**self._control_kwargs(control_val_t)))
 
     def time_evolution_operator(self) -> List[qt.Qobj]:
         """
         Compute the time evolution operator using the pulse Hamiltonian.
         """
-        return qt.propagator(self._get_ham, self._pulse_times)
+        pulse_times: list[float] = np.asarray(self._pulse_times, dtype=float).tolist()
+        propagator = qt.propagator(self._get_ham, pulse_times)
+        if isinstance(propagator, list):
+            return propagator
+        return [propagator]
 
     def state_fidelity(self, initial_state: Optional[np.ndarray | int | qt.Qobj] = None,
                        final_state: Optional[np.ndarray | int | qt.Qobj] = None,
@@ -69,24 +96,27 @@ class Dynamics:
 
         """
         if c_ops is None:
-            pass
+            c_ops = None
         elif isinstance(c_ops, list):
             c_ops = [qt.Qobj(op) if isinstance(op, np.ndarray) else op for op in c_ops]
         else:
             raise ValidationError("Collapse operators must be provided as a list of Qobj or numpy arrays.")
 
-        if initial_state is None and final_state is None:
-            init_kwargs = {self._control_name: self._control_pulse[0], **self._parameters}
-            _, init_eigenstates = qt.Qobj(self._H_func(**init_kwargs)).eigenstates()
-            psi_init = init_eigenstates[self._initial_state]
+        control_pulse = self._control_pulse
+        assert control_pulse is not None
+        pulse_times: list[float] = np.asarray(self._pulse_times, dtype=float).tolist()
 
-            final_kwargs = {self._control_name: self._control_pulse[-1], **self._parameters}
-            _, final_eigenstates = qt.Qobj(self._H_func(**final_kwargs)).eigenstates()
-            psi_target = final_eigenstates[self._final_state]
+        if initial_state is None and final_state is None:
+            assert self._initial_state is not None and self._final_state is not None
+            psi_init = self._eigenstate(float(control_pulse[0]), self._initial_state)
+            psi_target = self._eigenstate(float(control_pulse[-1]), self._final_state)
+
+        elif isinstance(initial_state, int) and isinstance(final_state, int):
+            psi_init = self._eigenstate(float(control_pulse[0]), initial_state)
+            psi_target = self._eigenstate(float(control_pulse[-1]), final_state)
 
         elif isinstance(initial_state, np.ndarray) and isinstance(final_state, np.ndarray):
-            dummy_kwargs = {self._control_name: 0, **self._parameters}
-            ham_shape = self._H_func(**dummy_kwargs).shape
+            ham_shape = self._H_func(**self._control_kwargs(0)).shape
 
             if initial_state.shape[0] != ham_shape[0] or final_state.shape[0] != ham_shape[0]:
                 raise ValidationError(
@@ -105,7 +135,11 @@ class Dynamics:
 
         options = {'store_final_state': True, 'store_states': False}
 
-        psi_f = qt.mesolve(self._get_ham, psi_init, self._pulse_times, c_ops=c_ops, options=options).final_state
+        result = qt.mesolve(self._get_ham, psi_init, pulse_times, c_ops=c_ops, options=options)
+        psi_f = result.final_state
+        if psi_f is None:
+            raise ValidationError("Time evolution did not return a final state.")
+
         state_fidelity = qt.fidelity(psi_target, psi_f) ** 2
 
         return state_fidelity
