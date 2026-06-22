@@ -1,52 +1,75 @@
-# `geodesiq`: Geometric optimal control
-[Documentation](#documentation) | [Installation](#installation) | [Example code](#example-code) | [Citing geodesiq](#citing-geodesiq)
+# `geodesiq`: geometric optimal control
 
-`geodesiq` is a Python package for optimal pulse control of Hamiltonian parameters for generic quantum systems.
+`geodesiq` is a Python package for computing optimal quantum-control pulses from a parameter-dependent Hamiltonian.
 
+[Installation](#installation) | [Quickstart](#quickstart) | [Public API](#public-api) | [Development](#development)
 
+## Installation
 
+Install from PyPI:
 
-# Documentation
-Documentation is available [here](www.github.com).
-
-# Installation
-To install `geodesiq`, you can use the standard Python package installer:
 ```bash
 pip install geodesiq
 ```
 
-# Example code
-Here is an example code based on the two-level Landau-Zener problem $H[z(t)]=z(t)\sigma_z+x \sigma_x$ with control parameter $z(t)$. To compute the optimal pulse, you establish the base Hamiltonian and (optionally) the partial derivative of the Hamiltonian with respect to the control parameter.
+For development:
+
+```bash
+uv sync --group dev
+```
+
+## Quickstart
+
+The public API exposes `Hamiltonian`, `PulseControl`, `Dynamics`, the package version, and the custom exception/warning types.
 
 ```python
 import numpy as np
+
 from geodesiq import Hamiltonian
 
-# ----- Define Hamiltonian and its gradient -----
-def H_fun(x, z):
-    return np.array([[z, x],
-                     [x, -z]])
 
-def H_partial(x, z):
-    return np.array([[1, 0],
-                     [0, -1]])
+def lz_hamiltonian(lam: float, delta: float = 1.0) -> np.ndarray:
+    return np.array([[lam, delta], [delta, -lam]])
 
-hamiltonian = Hamiltonian(H_fun, H_partial)
 
-# ----- Set system and control parameters -----
-alpha = 2
-beta = 2
-x = 1
-z0 = -10
-zf = -z0
+def lz_partial(lam: float, delta: float = 1.0) -> np.ndarray:
+    return np.array([[1.0, 0.0], [0.0, -1.0]])
 
-hamiltonian.set_parameters(x=x)
-hamiltonian.set_control(control_name='z', pulse_initial=z0, pulse_final=zf,
-                        initial_state=0, alpha=alpha, beta=beta)
 
-# ----- Solve for optimal pulse -----
-hamiltonian.solve_problem()
+ham = Hamiltonian(lz_hamiltonian, partial_H_func=lz_partial)
+ham.set_parameters(delta=0.5)
+ham.set_control(
+    control_name="lam",
+    pulse_initial=-5.0,
+    pulse_final=5.0,
+    initial_state=0,
+    alpha=2.0,
+    beta=2.0,
+    num_steps=257,
+)
+
+ham.solve_problem()
+print(ham.control_sol)
 ```
 
-# Citing `geodesiq`
-If you use `geodesiq` in your research, please cite the reference paper available [here](www.github.com).
+## Public API
+
+Top-level imports are intentionally kept small and explicit:
+
+- `Hamiltonian`
+- `PulseControl`
+- `Dynamics`
+- `GeodesiQError` and the typed exception hierarchy
+- `GeodesiQWarning` and related warnings
+- `__version__`
+
+## Development
+
+Use the following checks before submitting changes:
+
+```bash
+uv run ruff check .
+uv run mypy
+uv run pytest -q
+uv run python -m build
+```
