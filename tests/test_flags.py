@@ -1,6 +1,6 @@
 import pytest
-from geodesiq._utils import Flags
 
+from geodesiq._utils import Flags
 
 # ---------------------------------------------------------------------------
 # Fixtures

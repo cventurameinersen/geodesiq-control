@@ -2,9 +2,13 @@ import numpy as np
 import pytest
 from scipy.integrate import solve_ivp
 
-from geodesiq import Hamiltonian, InvalidControlParameterError, ImmutableConfigurationError, \
-    MissingControlParameterError, ValidationError
-
+from geodesiq import (
+    Hamiltonian,
+    ImmutableConfigurationError,
+    InvalidControlParameterError,
+    MissingControlParameterError,
+    ValidationError,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers – simple 2×2 Landau-Zener model:  H = [[lam, delta], [delta, -lam]]

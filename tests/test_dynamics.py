@@ -5,7 +5,6 @@ import qutip as qt
 from geodesiq.dynamics import Dynamics
 from geodesiq.exceptions import ValidationError
 
-
 # ------------------------------------------------------------
 # Dummy Hamiltonian() object as pytest.fixture
 # ------------------------------------------------------------
