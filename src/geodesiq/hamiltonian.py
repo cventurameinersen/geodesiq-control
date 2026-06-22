@@ -758,6 +758,62 @@ class Hamiltonian:
 
         return fig, ax
 
+    def plot_metric_tensor(self, fig=None, ax=None, legend: bool = True, legend_kwargs: Optional[dict] = None,
+                           xlabel: Optional[str] = None, ylabel: Optional[str] = None,
+                           title: Optional[str] = None, **plot_kwargs):
+        """
+        Plot the metric tensor (G tensor) as a function of the control parameter.
+
+        If the metric tensor is not available yet, it is computed from the current
+        Hamiltonian/control configuration.
+
+        Parameters
+        ----------
+        fig, ax
+            Optional matplotlib figure/axis. If not provided, they are created.
+        legend : bool
+            Whether to draw a legend.
+        legend_kwargs : Optional[dict]
+            Extra kwargs forwarded to ``ax.legend``.
+        xlabel : Optional[str]
+            Label for the x-axis. Defaults to ``control_name`` when not provided.
+        ylabel : Optional[str]
+            Label for the y-axis. Defaults to ``"G tensor"`` when not provided.
+        title : Optional[str]
+            Plot title. Defaults to ``"G tensor"`` when not provided.
+        **plot_kwargs
+            Extra kwargs forwarded to ``ax.plot``.
+
+        Returns
+        -------
+        tuple
+            ``(fig, ax)`` with the generated plot.
+        """
+        self._check_control_parameters()
+        self._solve_eigenproblem()
+        self._compute_metric_tensor()
+
+        if ax is None:
+            import matplotlib.pyplot as plt
+
+            if fig is None:
+                fig, ax = plt.subplots()
+            else:
+                ax = fig.add_subplot(111)
+        elif fig is None:
+            fig = ax.figure
+
+        ax.plot(self._control_pulse, self._metric_tensor, label="G", **plot_kwargs)
+
+        ax.set_xlabel(self.control_name if xlabel is None else xlabel)
+        ax.set_ylabel("G tensor" if ylabel is None else ylabel)
+        ax.set_title("G tensor" if title is None else title)
+
+        if legend:
+            ax.legend(**(legend_kwargs or {}))
+
+        return fig, ax
+
     def synthesize_pulse(self, duration: float, method: Optional[str] = None, pulse_args: Optional[tuple] = None,
                          pulse_kwargs: Optional[dict] = None):
         """
