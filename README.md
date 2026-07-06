@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="images/geodesiq_logo.png" alt="Logo" width="200"/>
+</p>
+
 # `geodesiq`: Geometric optimal control
 [Documentation](#documentation) | [Installation](#installation) | [Example code](#example-code) | [Citing geodesiq](#citing-geodesiq)
 
