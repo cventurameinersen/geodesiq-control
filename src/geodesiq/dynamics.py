@@ -129,16 +129,18 @@ class Dynamics:
             A list of average gate fidelities for each time step in the pulse duration.
         """
 
-        target_gate = qt.Qobj(target_gate) if isinstance(target_gate, np.ndarray) else target_gate
+        if isinstance(target_gate, np.ndarray):
+            target_gate = qt.Qobj(target_gate)
 
         if gate is None:
-            U = self.time_evolution_operator()
-            gate_fid = [qt.average_gate_fidelity(oper=U[j], target=target_gate) for j in range(len(U))]
+            operators = self.time_evolution_operator()
+        elif isinstance(gate, qt.Qobj):
+            operators = [gate]
+        elif isinstance(gate, list) and all(isinstance(g, qt.Qobj) for g in gate):
+            operators = gate
         else:
-            if isinstance(gate, qt.Qobj):
-                gate = [gate]  # Convert to list for consistent processing
-            elif not isinstance(gate, list) or not all(isinstance(g, qt.Qobj) for g in gate):
-                raise ValidationError("Gate must be a Qobj or a list of Qobj instances.")
-            gate_fid = [qt.average_gate_fidelity(oper=gate[j], target=target_gate) for j in range(len(gate))]
+            raise ValidationError("Gate must be a Qobj or a list of Qobj instances.")
+        
+        gate_fid = [qt.average_gate_fidelity(oper=oper, target=target_gate) for oper in operators]
 
         return gate_fid

@@ -3,10 +3,10 @@ name = "geodesiq"
 dynamic = ["version"]
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.10"
 dependencies = [
-    "numpy>=2.4.6",
-    "scipy>=1.17.1",
+    "numpy>=1.26.0",
+    "scipy>=1.15.3",
 ]
 
 [project.optional-dependencies]
