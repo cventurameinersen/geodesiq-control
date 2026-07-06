@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="images/geodesiq_logo.png" alt="Logo" width="200"/>
+  <img src="images/geodesiq_logo.png" alt="Logo"/>
 </p>
 
 # `geodesiq`: Geometric optimal control
