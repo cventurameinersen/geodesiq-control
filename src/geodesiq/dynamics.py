@@ -58,7 +58,7 @@ class Dynamics:
 
     def _get_ham(self, t: float) -> qt.Qobj:
         """
-        Construct the time-dependent Hamiltonian using QuTiP Qobj.
+        Construct the time-dependent Hamiltonian using QuTiP Qobj
         """
 
         pulse_times: list[float] = np.asarray(self._pulse_times, dtype=float).tolist()
