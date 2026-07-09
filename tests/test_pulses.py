@@ -74,8 +74,17 @@ def test_fourier_spectrum_with_linear_ramp(sample_pulse_data):
     pulse, duration = sample_pulse_data
     pc = PulseControl(pulse, duration)
 
-    frequencies, magnitude = pc.fourier_spectrum()
+    frequencies, times, magnitude = pc.fourier_spectrum(window_len=50)
     assert np.all(frequencies >= 0)
+
+
+def test_fourier_spectrum_small_size(sample_pulse_data):
+    """Verify that an error is raised if the length of the pulse is smaller than the window length."""
+    pulse, duration = sample_pulse_data
+    pc = PulseControl(pulse, duration)
+
+    with pytest.raises(ValidationError, match="window_len must be smaller"):
+        pc.fourier_spectrum(window_len=len(pc._pulse_times) * 2)
 
 
 # ------------------------------------------------------------
@@ -173,7 +182,7 @@ def test_export_pulse_unsupported_extension(default_pulse, tmp_path):
     test_file_base = os.path.join(tmp_path, "test_pulse_invalid")
 
     with pytest.raises(MissingArgsError, match="Unsupported data_type"):
-        default_pulse.export_pulse(filename=test_file_base, file_extension="csv")
+        default_pulse.export_pulse(filename=test_file_base, file_extension="json")
 
 
 def test_export_pulse_strips_leading_dot(default_pulse, tmp_path):

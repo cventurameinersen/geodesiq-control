@@ -1,7 +1,7 @@
 """
-Hamiltonian factory helpers for the geodesiq benchmark suite.
+ControlModel factory helpers for the geodesiq benchmark suite.
 
-All factories return a fully configured :class:`~geodesiq.Hamiltonian` ready
+All factories return a fully configured :class:`~geodesiq.ControlModel` ready
 to be passed to ``solve_problem()``.
 """
 
@@ -9,14 +9,14 @@ from __future__ import annotations
 
 import numpy as np
 
-from geodesiq import Hamiltonian
+from geodesiq import ControlModel
 
 # ---------------------------------------------------------------------------
-# Internal Hamiltonian builders
+# Internal ControlModel builders
 # ---------------------------------------------------------------------------
 
 def _lz_H_dH(coupling: float = 0.5):
-    """2×2 Landau-Zener Hamiltonian  H(λ) = λ·σ_z + coupling·σ_x."""
+    """2×2 Landau-Zener ControlModel  H(λ) = λ·σ_z + coupling·σ_x."""
     D = np.array([[1.0, 0.0], [0.0, -1.0]])
     C = np.array([[0.0, coupling], [coupling, 0.0]])
 
@@ -31,7 +31,7 @@ def _lz_H_dH(coupling: float = 0.5):
 
 def _chain_H_dH(N: int, coupling: float = 0.5, seed: int = 42):
     """
-    N-level chain Hamiltonian with a single λ-dependent drive:
+    N-level chain ControlModel with a single λ-dependent drive:
 
         H(λ) = λ · D  +  coupling · C
 
@@ -80,20 +80,20 @@ def _chain_H_dH(N: int, coupling: float = 0.5, seed: int = 42):
 
 def make_ham(dim: int = 2, num_steps: int = 2 ** 8 + 1, analytical_partial: bool = True, adiabatic: bool = True,
              pulse_initial: float = -5.0, pulse_final: float = 5.0, alpha: float = 2.0, beta: float = 2.0,
-             coupling: float = 0.5, seed: int = 42, ) -> Hamiltonian:
+             coupling: float = 0.5, seed: int = 42, ) -> ControlModel:
     """
-    Build and configure a :class:`~geodesiq.Hamiltonian` for benchmarking.
+    Build and configure a :class:`~geodesiq.ControlModel` for benchmarking.
 
     Parameters
     ----------
     dim
         Hilbert-space dimension.  ``dim=2`` uses the Landau-Zener model;
-        larger values use an N-level chain Hamiltonian.
+        larger values use an N-level chain ControlModel.
     num_steps
         Number of λ grid points (controls the resolution of the eigenproblem
         sweep and is the main source of scaling for that stage).
     analytical_partial
-        If ``True`` the analytical ∂H/∂λ is provided to the Hamiltonian.
+        If ``True`` the analytical ∂H/∂λ is provided to the ControlModel.
         If ``False`` no partial function is supplied, so the internal
         numerical-differentiation path is exercised instead.
     adiabatic
@@ -105,16 +105,16 @@ def make_ham(dim: int = 2, num_steps: int = 2 ** 8 + 1, analytical_partial: bool
     alpha, beta
         Metric tensor exponents.
     coupling
-        Off-diagonal coupling strength passed to the Hamiltonian model.
+        Off-diagonal coupling strength passed to the ControlModel model.
     seed
-        RNG seed for the chain Hamiltonian's random noise term.
+        RNG seed for the chain ControlModel's random noise term.
     """
     if dim == 2:
         H, dH = _lz_H_dH(coupling=coupling)
     else:
         H, dH = _chain_H_dH(dim, coupling=coupling, seed=seed)
 
-    ham = Hamiltonian(H, partial_H_func=(dH if analytical_partial else None))
+    ham = ControlModel(H, partial_H_func=(dH if analytical_partial else None))
 
     ctrl: dict = dict(control_name="lam", pulse_initial=pulse_initial, pulse_final=pulse_final, initial_state=0,
                       alpha=alpha, beta=beta, num_steps=num_steps, )

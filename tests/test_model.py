@@ -4,19 +4,15 @@ import numpy as np
 import pytest
 from scipy.integrate import solve_ivp
 
-from geodesiq import (
-    Hamiltonian,
-    ImmutableConfigurationError,
-    InvalidControlParameterError,
-    MissingControlParameterError,
-    SolverError,
-    ValidationError,
-)
+from geodesiq import (ControlModel, ImmutableConfigurationError, InvalidControlParameterError,
+                      MissingControlParameterError, SolverError, ValidationError, )
 from geodesiq.pulses import PulseControl
+
 
 # ---------------------------------------------------------------------------
 # Helpers – simple 2×2 Landau-Zener model:  H = [[lam, delta], [delta, -lam]]
 # ---------------------------------------------------------------------------
+
 
 def lz_hamiltonian(lam, delta=1.0):
     return np.array([[lam, delta], [delta, -lam]])
@@ -42,19 +38,19 @@ def _get_pyplot():
 
 @pytest.fixture
 def bare_ham():
-    """A Hamiltonian instance with no partial derivative provided."""
-    return Hamiltonian(lz_hamiltonian)
+    """A ControlModel instance with no partial derivative provided."""
+    return ControlModel(lz_hamiltonian)
 
 
 @pytest.fixture
 def ham_with_partial():
-    """A Hamiltonian instance with an analytical partial derivative."""
-    return Hamiltonian(lz_hamiltonian, partial_H_func=lz_partial)
+    """A ControlModel instance with an analytical partial derivative."""
+    return ControlModel(lz_hamiltonian, partial_H_func=lz_partial)
 
 
 @pytest.fixture
 def configured_ham(ham_with_partial):
-    """A fully configured Hamiltonian ready for solve_problem()."""
+    """A fully configured ControlModel ready for solve_problem()."""
     ham_with_partial.set_parameters(delta=0.5)
     ham_with_partial.set_control(control_name="lam", pulse_initial=-5.0, pulse_final=5.0, initial_state=0, alpha=2.0,
                                  beta=2.0, num_steps=2 ** 8 + 1, )
@@ -100,12 +96,12 @@ class TestCallable:
 
         np.testing.assert_allclose(ham_matrix, expected)
 
-    def test_call_stored_parameters_override_runtime_kwargs(self, bare_ham):
+    def test_call_runtime_kwargs_override_stored_parameters(self, bare_ham):
         bare_ham.set_parameters(delta=0.6)
 
-        # __call__ merges kwargs as {**kwargs, **self._parameters}; stored params take precedence.
+        # __call__ merges kwargs as {**self._parameters, **kwargs}; runtime params take precedence.
         ham_matrix = bare_ham(lam=1.5, delta=0.1)
-        expected = np.array([[1.5, 0.6], [0.6, -1.5]])
+        expected = np.array([[1.5, 0.1], [0.1, -1.5]])
 
         np.testing.assert_allclose(ham_matrix, expected)
 
@@ -140,12 +136,16 @@ class TestSetterValidation:
             bare_ham.beta = "two"
 
     def test_num_steps_rejects_non_positive(self, bare_ham):
-        with pytest.raises(InvalidControlParameterError, match="positive integer"):
+        with pytest.raises(InvalidControlParameterError, match=">= 3"):
             bare_ham.num_steps = -5
 
     def test_num_steps_rejects_float(self, bare_ham):
-        with pytest.raises(InvalidControlParameterError, match="positive integer"):
+        with pytest.raises(InvalidControlParameterError, match=">= 3"):
             bare_ham.num_steps = 3.5
+
+    def test_num_steps_rejects_values_below_three(self, bare_ham):
+        with pytest.raises(InvalidControlParameterError, match=">= 3"):
+            bare_ham.num_steps = 2
 
     def test_final_state_rejects_non_int(self, bare_ham):
         with pytest.raises(InvalidControlParameterError, match="integer"):
@@ -235,13 +235,20 @@ class TestSetControl:
         bare_ham.set_control(alpha=4.0)  # only update alpha
         assert bare_ham.control_name == "lam"
         assert bare_ham.alpha == 4.0
+        assert bare_ham.num_steps == 129
+
+    def test_set_control_uses_default_num_steps_when_omitted_initially(self, bare_ham):
+        bare_ham.set_control(control_name="lam", pulse_initial=-3.0, pulse_final=3.0, initial_state=0, alpha=2.0,
+                             beta=2.0)
+
+        assert bare_ham.num_steps == 2 ** 10 + 1
 
     def test_set_control_same_values_keep_flags(self, configured_ham):
         configured_ham._flags["eigenproblem_solved"] = True
         configured_ham._flags["metric_computed"] = True
 
-        configured_ham.set_control(control_name="lam", pulse_initial=-5.0, pulse_final=5.0,
-                                   initial_state=0, final_state=0, alpha=2.0, beta=2.0, num_steps=2 ** 8 + 1)
+        configured_ham.set_control(control_name="lam", pulse_initial=-5.0, pulse_final=5.0, initial_state=0,
+                                   final_state=0, alpha=2.0, beta=2.0, num_steps=2 ** 8 + 1)
 
         assert configured_ham._flags["eigenproblem_solved"] is True
         assert configured_ham._flags["metric_computed"] is True
@@ -261,13 +268,24 @@ class TestCheckControlParameters:
         with pytest.raises(MissingControlParameterError, match="alpha"):
             bare_ham._check_control_parameters()
 
+    def test_missing_num_steps_is_reported(self, bare_ham):
+        bare_ham.control_name = "lam"
+        bare_ham.pulse_initial = -1.0
+        bare_ham.pulse_final = 1.0
+        bare_ham.initial_state = 0
+        bare_ham.alpha = 2.0
+        bare_ham.beta = 2.0
+
+        with pytest.raises(MissingControlParameterError, match="num_steps"):
+            bare_ham._check_control_parameters()
+
     def test_no_error_when_all_set(self, configured_ham):
         configured_ham._check_control_parameters()  # should not raise
 
     def test_diabatic_configuration_requires_diabatic_exponents(self):
-        ham = Hamiltonian(lz_hamiltonian, partial_H_func=lz_partial)
-        ham.set_control(control_name="lam", pulse_initial=-1.0, pulse_final=1.0,
-                        initial_state=0, final_state=1, alpha=2.0, beta=2.0, num_steps=33)
+        ham = ControlModel(lz_hamiltonian, partial_H_func=lz_partial)
+        ham.set_control(control_name="lam", pulse_initial=-1.0, pulse_final=1.0, initial_state=0, final_state=1,
+                        alpha=2.0, beta=2.0, num_steps=33)
 
         with pytest.raises(MissingControlParameterError, match="dia_alpha"):
             ham._check_control_parameters()
@@ -356,7 +374,7 @@ class TestStringRepresentations:
 
     def test_repr_contains_summary_banner(self, configured_ham):
         r = repr(configured_ham)
-        assert "Hamiltonian Control Summary" in r
+        assert "ControlModel Control Summary" in r
 
 
 # ---------------------------------------------------------------------------
@@ -399,7 +417,7 @@ class TestSolveProblem:
 
     def test_solve_problem_with_numerical_partial(self):
         """When no analytical partial is given, the numerical derivative is used."""
-        ham = Hamiltonian(lz_hamiltonian)  # no partial_H_func
+        ham = ControlModel(lz_hamiltonian)  # no partial_H_func
         ham.set_parameters(delta=0.5)
         ham.set_control(control_name="lam", pulse_initial=-5.0, pulse_final=5.0, initial_state=0, alpha=2.0, beta=2.0,
                         num_steps=2 ** 8 + 1, )
@@ -599,12 +617,12 @@ class TestComputeMetricTensor:
 class TestNumericalPartialAccuracy:
     def test_numerical_partial_matches_analytical(self):
         """The numerical derivative should closely match the analytical one."""
-        ham_num = Hamiltonian(lz_hamiltonian)
+        ham_num = ControlModel(lz_hamiltonian)
         ham_num.set_parameters(delta=0.5)
         ham_num.set_control(control_name="lam", pulse_initial=-5.0, pulse_final=5.0, initial_state=0, alpha=2.0,
                             beta=2.0, num_steps=2 ** 8 + 1)
 
-        ham_ana = Hamiltonian(lz_hamiltonian, partial_H_func=lz_partial)
+        ham_ana = ControlModel(lz_hamiltonian, partial_H_func=lz_partial)
         ham_ana.set_parameters(delta=0.5)
         ham_ana.set_control(control_name="lam", pulse_initial=-5.0, pulse_final=5.0, initial_state=0, alpha=2.0,
                             beta=2.0, num_steps=2 ** 8 + 1)
@@ -672,7 +690,7 @@ class TestPlotEigenvalues:
 
         assert ax.get_xlabel() == configured_ham.control_name
         assert ax.get_ylabel() == "Energy"
-        assert ax.get_title() == "Hamiltonian Eigenvalues"
+        assert ax.get_title() == "ControlModel Eigenvalues"
 
         plt.close(fig)
 
@@ -811,23 +829,14 @@ class TestSolveProblemErrors:
         with pytest.raises(MissingControlParameterError, match="Missing control"):
             bare_ham.solve_problem()
 
+    def test_solve_problem_raises_for_romb_incompatible_num_steps(self):
+        ham = ControlModel(lz_hamiltonian, partial_H_func=lz_partial)
+        ham.set_parameters(delta=0.5)
+        ham.set_control(control_name="lam", pulse_initial=-1.0, pulse_final=1.0, initial_state=0, alpha=2.0, beta=2.0,
+                        num_steps=100)
 
-# ---------------------------------------------------------------------------
-# synthesize_pulse
-# ---------------------------------------------------------------------------
-
-# ToDo: Recover when pulse is properly implemented
-# class TestSynthesizePulse:
-#     def test_synthesize_pulse_returns_pulse_control(self, configured_ham):
-#         pulse = configured_ham.synthesize_pulse(duration=1.0)
-#         assert pulse is not None
-#
-#     def test_pulse_property_triggers_solve(self, configured_ham):
-#         """Accessing `pulse` property should auto-solve if needed."""
-#         assert configured_ham._flags["ode_solved"] is False
-#         pulse = configured_ham.pulse
-#         assert pulse is not None
-#         assert configured_ham._flags["ode_solved"] is True
+        with pytest.raises(InvalidControlParameterError, match="incompatible with romb"):
+            ham.solve_problem()
 
 
 # ---------------------------------------------------------------------------
@@ -855,7 +864,7 @@ class TestGenerateSummary:
 class TestLandauZenerAnalytical:
     def test_linear(self):
         """For the LZ model, the optimal control for n_+ = 0 is a linear ramp from pulse_initial to pulse_final."""
-        ham = Hamiltonian(lz_hamiltonian)
+        ham = ControlModel(lz_hamiltonian)
 
         delta = 0.5
         pulse_0 = -5.0
@@ -874,7 +883,7 @@ class TestLandauZenerAnalytical:
 
     def test_n1(self):
         """For the LZ model, the optimal control for n_+ = 1 has a closed form solution"""
-        ham = Hamiltonian(lz_hamiltonian)
+        ham = ControlModel(lz_hamiltonian)
 
         delta = 0.7
         pulse_0 = -10.0
@@ -893,7 +902,7 @@ class TestLandauZenerAnalytical:
 
     def test_geoQUAD(self):
         """For the LZ model, the optimal control for n_+ = 2 has a closed form solution"""
-        ham = Hamiltonian(lz_hamiltonian)
+        ham = ControlModel(lz_hamiltonian)
 
         delta = 1.4
         pulse_0 = -3.4
@@ -912,7 +921,7 @@ class TestLandauZenerAnalytical:
 
     def test_FAQUAD(self):
         """For the LZ model, the optimal control for n_+ = 3 has a closed form solution"""
-        ham = Hamiltonian(lz_hamiltonian)
+        ham = ControlModel(lz_hamiltonian)
 
         delta = 2.4
         pulse_0 = -8.02
@@ -954,7 +963,7 @@ class TestCoverageRestorations:
     def test_print_summary_emits_summary_text(self, configured_ham, capsys):
         configured_ham.print_summary()
         captured = capsys.readouterr()
-        assert "Hamiltonian Control Summary" in captured.out
+        assert "ControlModel Control Summary" in captured.out
 
 
 class TestSynthesizePulse:
@@ -1037,20 +1046,10 @@ class TestSolveProblemErrorsExtended:
 
 class TestDiabaticMetricPath:
     def test_solve_problem_computes_diabatic_metric_and_dia_list(self):
-        ham = Hamiltonian(lz_hamiltonian, partial_H_func=lz_partial)
+        ham = ControlModel(lz_hamiltonian, partial_H_func=lz_partial)
         ham.set_parameters(delta=0.5)
-        ham.set_control(
-            control_name="lam",
-            pulse_initial=-3.0,
-            pulse_final=3.0,
-            initial_state=0,
-            final_state=1,
-            alpha=2.0,
-            beta=2.0,
-            dia_alpha=1.0,
-            dia_beta=1.0,
-            num_steps=65,
-        )
+        ham.set_control(control_name="lam", pulse_initial=-3.0, pulse_final=3.0, initial_state=0, final_state=1,
+                        alpha=2.0, beta=2.0, dia_alpha=1.0, dia_beta=1.0, num_steps=65, )
 
         ham.solve_problem(pulse_accuracy=30)
 
@@ -1060,11 +1059,10 @@ class TestDiabaticMetricPath:
         assert ham._a_tilde is not None
 
     def test_solve_dia_list_returns_early_when_cached(self):
-        ham = Hamiltonian(lz_hamiltonian, partial_H_func=lz_partial)
+        ham = ControlModel(lz_hamiltonian, partial_H_func=lz_partial)
         ham._flags["dia_list_computed"] = True
         ham._dia_list = np.array([[1]])
 
         ham._solve_dia_list()
 
         np.testing.assert_array_equal(ham._dia_list, np.array([[1]]))
-

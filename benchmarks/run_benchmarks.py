@@ -3,7 +3,7 @@ geodesiq CPU benchmark runner
 ==============================
 
 Measures wall-clock time for the three internal computational stages of
-:meth:`~geodesiq.Hamiltonian.solve_problem` across five physically motivated
+:meth:`~geodesiq.ControlModel.solve_problem` across five physically motivated
 sweep variables, then appends the results to a versioned Parquet history file
 so multiple runs (across package versions or machines) can be compared later.
 
@@ -45,7 +45,7 @@ for _p in (str(_ROOT), str(_HERE)):
         sys.path.insert(0, _p)
 
 import geodesiq  # noqa: E402 (must be after sys.path setup)
-from geodesiq import Hamiltonian  # noqa: E402
+from geodesiq import ControlModel  # noqa: E402
 
 # relative import works when run as module; absolute when run as script
 try:
@@ -96,12 +96,13 @@ def _stats(times: list[float]) -> dict:
 # Stage-level benchmarking
 # ---------------------------------------------------------------------------
 
-def benchmark_ham(ham: Hamiltonian, pulse_accuracy: int = 1000, n_repeat: int = _DEFAULT_N_REPEAT, ) -> dict[str, dict]:
+def benchmark_ham(ham: ControlModel, pulse_accuracy: int = 1000, n_repeat: int = _DEFAULT_N_REPEAT, ) -> dict[
+    str, dict]:
     """
     Benchmark the three internal stages of :meth:`solve_problem` plus the
     full pipeline, in isolation.
 
-    The Hamiltonian is solved once as a warm-up so all internal caches are
+    The ControlModel is solved once as a warm-up so all internal caches are
     populated.  Each stage is then timed by resetting only the relevant flag
     (which, thanks to the ``Flags`` cascade, automatically invalidates all
     downstream flags) and calling the corresponding private method.
@@ -109,7 +110,7 @@ def benchmark_ham(ham: Hamiltonian, pulse_accuracy: int = 1000, n_repeat: int = 
     Parameters
     ----------
     ham
-        A *fully configured* :class:`~geodesiq.Hamiltonian` instance.
+        A *fully configured* :class:`~geodesiq.ControlModel` instance.
     pulse_accuracy
         Number of ODE evaluation points; forwarded to ``_solve_ode``.
     n_repeat

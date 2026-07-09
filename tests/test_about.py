@@ -20,7 +20,6 @@ def test_about_prints_expected_sections(capsys):
         "Python Version:",
         "Number of CPUs:",
         "Platform Info:",
-        "Installation path:",
     ]
 
     for label in expected_labels:

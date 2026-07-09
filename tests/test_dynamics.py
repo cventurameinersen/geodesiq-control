@@ -8,14 +8,14 @@ from geodesiq.dynamics import Dynamics
 from geodesiq.exceptions import ValidationError
 
 # ------------------------------------------------------------
-# Dummy Hamiltonian() object as pytest.fixture
+# Dummy ControlModel() object as pytest.fixture
 # ------------------------------------------------------------
 
-class DummyHamiltonian:
-    """A minimal Hamiltonian object to isolate Dynamics testing."""
+class DummyModel:
+    """A minimal ControlModel object to isolate Dynamics testing."""
 
     def __init__(self, control_sol=None):
-        # A simple 2-level system Hamiltonian function: H(x) = x * sigma_x
+        # A simple 2-level system ControlModel function: H(x) = x * sigma_x
         self._H_func = lambda x, **kwargs: x * qt.sigmax().full()
         self._parameters = {}
         self._control_pulse = np.array([1.0, 1.0, 1.0])  # Used to select endpoint eigenstates
@@ -26,58 +26,58 @@ class DummyHamiltonian:
 
 
 @pytest.fixture
-def mock_hamiltonian():
-    return DummyHamiltonian()
+def mock_model():
+    return DummyModel()
 
 
 @pytest.fixture
-def default_dynamics(mock_hamiltonian):
+def default_dynamics(mock_model):
     duration = 2.0
-    return Dynamics(duration=duration, hamiltonian=cast(Any, mock_hamiltonian))
+    return Dynamics(duration=duration, model=cast(Any, mock_model))
 
 
 @pytest.fixture
 def varying_dynamics():
     duration = 2.0
-    varying_hamiltonian = DummyHamiltonian(control_sol=[0.0, 2.0, 4.0])
-    return Dynamics(duration=duration, hamiltonian=cast(Any, varying_hamiltonian))
+    varying_model = DummyModel(control_sol=[0.0, 2.0, 4.0])
+    return Dynamics(duration=duration, model=cast(Any, varying_model))
 
 
 # ------------------------------------------------------------
 # Testing initialization and internal method _get_ham()
 # ------------------------------------------------------------
 
-def test_initialization(mock_hamiltonian):
-    """Verify attributes are correctly extracted from the Hamiltonian object."""
+def test_initialization(mock_model):
+    """Verify attributes are correctly extracted from the ControlModel object."""
     duration = 5.0
-    dyn = Dynamics(duration=duration, hamiltonian=cast(Any, mock_hamiltonian))
+    dyn = Dynamics(duration=duration, model=cast(Any, mock_model))
 
     assert dyn._duration == 5.0
-    assert len(dyn._pulse_times) == len(mock_hamiltonian._control_sol)
+    assert len(dyn._pulse_times) == len(mock_model._control_sol)
     assert dyn._pulse_times[-1] == 5.0  # Check proper scaling of time array
 
 
 def test_get_ham(default_dynamics):
-    """Test the internal QuTiP Hamiltonian constructor method."""
+    """Test the internal QuTiP ControlModel constructor method."""
     H_qobj = default_dynamics._get_ham(t=1.0)
 
     assert isinstance(H_qobj, qt.Qobj)
 
 
 def test_get_ham_interpolation(varying_dynamics):
-    """Hamiltonian values should follow linear interpolation of the solved control pulse."""
+    """ControlModel values should follow linear interpolation of the solved control pulse."""
     H_qobj = varying_dynamics._get_ham(t=0.5)
     expected = np.array([[0.0, 1.0], [1.0, 0.0]])
 
     np.testing.assert_allclose(H_qobj.full(), expected)
 
 
-def test_initialization_requires_solved_hamiltonian(mock_hamiltonian):
-    """Dynamics should reject Hamiltonian objects missing solved-control fields."""
-    mock_hamiltonian._control_sol = None
+def test_initialization_requires_solved_model(mock_model):
+    """Dynamics should reject ControlModel objects missing solved-control fields."""
+    mock_model._control_sol = None
 
-    with pytest.raises(ValidationError, match="requires a solved Hamiltonian"):
-        Dynamics(duration=1.0, hamiltonian=cast(Any, mock_hamiltonian))
+    with pytest.raises(ValidationError, match="requires a solved ControlModel"):
+        Dynamics(duration=1.0, model=cast(Any, mock_model))
 
 
 # ------------------------------------------------------------
@@ -145,7 +145,7 @@ def test_state_fidelity_qobj_states(default_dynamics):
 
 def test_state_fidelity_invalid_dimensions(default_dynamics):
     """Verify that array dimensional mismatches throw a ValidationError."""
-    # Our dummy Hamiltonian has dimensions 2x2. Let's pass a 3-level state.
+    # Our dummy ControlModel has dimensions 2x2. Let's pass a 3-level state.
     bad_state = np.array([[1.0], [0.0], [0.0]])
     valid_state = np.array([[1.0], [0.0]])
 

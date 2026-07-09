@@ -13,8 +13,6 @@ from ._meta import __author__, __version__
 
 __all__ = ["about"]
 
-__all__ = ["about"]
-
 
 def _module_version(module_name: str) -> str:
     """Return module __version__ when available, otherwise 'None'."""
@@ -42,8 +40,8 @@ def about() -> None:
     print(f"geodesiq Version:   {__version__}")
     print(f"Python Version:     {platform.python_version()} ({sys.implementation.name})")
     print(f"Number of CPUs:     {os.cpu_count()}")
-    print(f"Platform Info:      {platform.system()} ({platform.machine()}, {platform.machine()}))")
-    print(f"Installation path:  {_installation_path()}")
+    print(f"Platform Info:      {platform.system()} ({platform.release()}, {platform.machine()})")
+    # print(f"Installation path:  {_installation_path()}")
 
     print("\nCore Dependencies:")
     print(f"Numpy Version:      {_module_version('numpy')}")
@@ -51,7 +49,7 @@ def about() -> None:
     print(f"QuTiP Version:      {_module_version('qutip')}")
     print(f"Matplotlib Version: {_module_version('matplotlib')}")
 
-    print("\n")
+    print()
     print("=" * 50)
     print("Please cite geodesiq in your publication:")
     print("Your Citation Information Here")

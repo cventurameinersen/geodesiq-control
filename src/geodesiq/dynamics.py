@@ -3,42 +3,39 @@ from typing import Any, List, Optional
 import numpy as np
 import qutip as qt
 
+from .controlmodel import ControlModel
 from .exceptions import ValidationError
-from .hamiltonian import Hamiltonian
 
 
 class Dynamics:
 
-    def __init__(self, duration: float, hamiltonian: Hamiltonian):
+    def __init__(self, duration: float, model: ControlModel):
         """
-        Initialize the Dynamics object, which depends on an instance of the Hamiltonian class. This class deals with
-        observables due to the time evolution of the pulsed Hamiltonian.
+        Initialize the Dynamics object, which depends on an instance of the ControlModel class. This class deals with
+        observables due to the time evolution of the pulsed ControlModel.
 
         Parameters:
         -----------
         duration: float
             Duration of the control pulse (t_f).
-        hamiltonian: Hamiltonian
-            An instance of the Hamiltonian class containing the control pulse and system parameters.
+        model: ControlModel
+            An instance of the ControlModel class containing the control pulse and system parameters.
         """
 
-        # Attributes of the Hamiltonian instance
-        self._H_func: Any = hamiltonian._H_func
-        self._parameters: dict[str, Any] = dict(hamiltonian._parameters)
+        # Attributes of the ControlModel instance
+        self._H_func: Any = model._H_func
+        self._parameters: dict[str, Any] = dict(model._parameters)
         self._control_pulse: np.ndarray | None = (
-            np.asarray(hamiltonian._control_pulse) if hamiltonian._control_pulse is not None else None
-        )
+            np.asarray(model._control_pulse) if model._control_pulse is not None else None)
         self._control_sol: np.ndarray | None = (
-            np.asarray(hamiltonian._control_sol) if hamiltonian._control_sol is not None else None
-        )
-        self._initial_state: int | None = hamiltonian._initial_state
-        self._final_state: int | None = hamiltonian._final_state
-        self._control_name: str | None = hamiltonian._control_name
+            np.asarray(model._control_sol) if model._control_sol is not None else None)
+        self._initial_state: int | None = model._initial_state
+        self._final_state: int | None = model._final_state
+        self._control_name: str | None = model._control_name
 
         if self._control_pulse is None or self._control_sol is None or self._control_name is None:
             raise ValidationError(
-                "Dynamics requires a solved Hamiltonian with control pulse, control solution and control name set."
-            )
+                "Dynamics requires a solved ControlModel with control pulse, control solution and control name set.")
 
         self._control_pulse = np.asarray(self._control_pulse, dtype=float)
         self._control_sol = np.asarray(self._control_sol, dtype=float)
@@ -58,7 +55,7 @@ class Dynamics:
 
     def _get_ham(self, t: float) -> qt.Qobj:
         """
-        Construct the time-dependent Hamiltonian using QuTiP Qobj
+        Construct the time-dependent ControlModel using QuTiP Qobj
         """
 
         pulse_times: list[float] = np.asarray(self._pulse_times, dtype=float).tolist()
@@ -69,7 +66,7 @@ class Dynamics:
 
     def time_evolution_operator(self) -> List[qt.Qobj]:
         """
-        Compute the time evolution operator using the pulse Hamiltonian.
+        Compute the time evolution operator using the pulse ControlModel.
         """
         pulse_times: list[float] = np.asarray(self._pulse_times, dtype=float).tolist()
         propagator = qt.propagator(self._get_ham, pulse_times)
@@ -120,7 +117,7 @@ class Dynamics:
 
             if initial_state.shape[0] != ham_shape[0] or final_state.shape[0] != ham_shape[0]:
                 raise ValidationError(
-                    f"Initial and final states must have the same dimension as the Hamiltonian. Shape of Hamiltonian:"
+                    f"Initial and final states must have the same dimension as the ControlModel. Shape of ControlModel:"
                     f" {ham_shape}. Shape of initial state: {initial_state.shape}")
 
             psi_init = qt.Qobj(initial_state)
@@ -174,7 +171,7 @@ class Dynamics:
             operators = gate
         else:
             raise ValidationError("Gate must be a Qobj or a list of Qobj instances.")
-        
+
         gate_fid = [qt.average_gate_fidelity(oper=oper, target=target_gate) for oper in operators]
 
         return gate_fid

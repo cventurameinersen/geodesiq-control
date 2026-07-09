@@ -7,7 +7,6 @@ import scipy as sp
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from scipy.interpolate import interp1d
-
 from scipy.signal import ShortTimeFFT
 from scipy.signal.windows import hann
 
@@ -18,7 +17,7 @@ from .exceptions import IOErrorGeodesiQ, MissingArgsError, ValidationError
 class PulseControl:
     """
     A class to represent a control pulse for quantum optimal control. This class depends on the control pulse computed
-    in the Hamiltonian class. The class allows for the synthesis of the pulse, filtering, and plotting of the pulse
+    in the ControlModel class. The class allows for the synthesis of the pulse, filtering, and plotting of the pulse
     shape and its Fourier spectrum.
     """
 
@@ -108,10 +107,9 @@ class PulseControl:
         piecewise_linear = interp1d(self._pulse_times, self._pulse, kind='linear', fill_value="extrapolate")
 
         new_s = np.linspace(self._pulse_times[0], self._pulse_times[-1], linear_steps)
-        approx_sol = piecewise_linear(new_s)
+        approx_sol = np.asarray(piecewise_linear(new_s))
 
         return new_s, approx_sol
-
 
     def fourier_spectrum(self, window_len: int = 256, hop: int = 32) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
@@ -133,8 +131,11 @@ class PulseControl:
         magnitude : np.ndarray
             2D magnitude spectrum of the control pulse (shape: [frequencies, times]).
         """
+        if window_len >= len(self._pulse_times):
+            raise ValidationError("window_len must be smaller than the length of the STFT array.")
+
         dt = np.abs(self._pulse_times[1] - self._pulse_times[0])
-        fs = 1.0 / dt
+        fs = float(1.0 / dt)
         win = hann(window_len, sym=False)
         sft = ShortTimeFFT(win, hop=hop, fs=fs, scale_to='magnitude')
 
@@ -246,8 +247,7 @@ class PulseControl:
         pulse: np.ndarray = np.asarray(self._pulse)
 
         if output_path.exists() and not overwrite:
-            raise IOErrorGeodesiQ(
-                f"File already exists (choose overwrite=True to remove safety check.): {output_path}")
+            raise IOErrorGeodesiQ(f"File already exists (choose overwrite=True to remove safety check.): {output_path}")
 
         # Save data depending on users preference
         if file_extension == 'npy':
@@ -260,8 +260,7 @@ class PulseControl:
             csv_data = np.column_stack((t, pulse))
             np.savetxt(output_path, csv_data, delimiter=",", header="t,pulse", comments="", fmt="%.8f")
         else:
-            raise MissingArgsError(f"Unsupported data_type '{file_extension}'. Supported types are: 'npy', 'txt', and 'csv'. ")
-
-        # ToDo: Add option to export pulse data in csv
+            raise MissingArgsError(
+                f"Unsupported data_type '{file_extension}'. Supported types are: 'npy', 'txt', and 'csv'. ")
 
         print(f"[{PACKAGE_NAME}] File saved as '{output_path}' type.")

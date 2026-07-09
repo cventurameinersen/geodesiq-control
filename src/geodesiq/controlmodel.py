@@ -16,28 +16,28 @@ from .exceptions import (
 from .pulses import PulseControl
 
 
-class Hamiltonian:
+class ControlModel:
     """
-    A class to represent a parameter-dependent Hamiltonian and solve the optimization problem for finding the optimal
-    control pulse. The Hamiltonian is defined as a function of a control parameter (e.g., lambda) and can also depend
+    A class to represent a parameter-dependent ControlModel and solve the optimization problem for finding the optimal
+    control pulse. The ControlModel is defined as a function of a control parameter (e.g., lambda) and can also depend
     on other _parameters. The class provides methods to set the _parameters, compute the metric tensor, solve the ODE
     for the control pulse, and synthesize the control pulse based on the solution of the optimization problem.
     """
 
-    def __init__(self, H_func: Callable[[Any], np.ndarray],
-                 partial_H_func: Optional[Callable[[Any], np.ndarray]] = None, _flags_verbose: bool = False):
+    def __init__(self, H_func: Callable[..., np.ndarray], partial_H_func: Optional[Callable[..., np.ndarray]] = None,
+                 _flags_verbose: bool = False):
         """
-        Initialize the Hamiltonian class with the Hamiltonian function and its partial derivative (if provided).
+        Initialize the ControlModel class with the ControlModel function and its partial derivative (if provided).
 
         Parameters
         ----------
-        H_func : Callable[[Any], np.ndarray]
-            A function that takes the control parameter and other _parameters as input and returns the Hamiltonian
+        H_func : Callable[..., np.ndarray]
+            A function that takes the control parameter and other _parameters as input and returns the ControlModel
             matrix as a numpy array. The function should be defined such that it can accept the control parameter as a
             keyword argument, e.g., H_func(lambda=..., param1=..., param2=..., ...).
-        partial_H_func : Optional[Callable[[Any], np.ndarray]]
+        partial_H_func : Optional[Callable[..., np.ndarray]]
             An optional function that takes the control parameter and other _parameters as input and returns the partial
-            derivative of the Hamiltonian with respect to the control parameter as a numpy array.
+            derivative of the ControlModel with respect to the control parameter as a numpy array.
             If this function is not provided, the class will compute the numerical partial derivative.
         """
         self._H_func = H_func
@@ -91,11 +91,12 @@ class Hamiltonian:
         self._previous_pulse_accuracy = None  # To track changes in pulse accuracy for ODE solving
 
     def __call__(self, *args, **kwargs):
-        # Return the Hamiltonian function if the object is called directly, allowing for easy evaluation of the
-        #   Hamiltonian at specific control values
-        return self.H_func(*args, **{**kwargs, **self._parameters})
+        # Return the ControlModel function if the object is called directly, allowing for easy evaluation of the
+        #   ControlModel at specific control values
+        # Runtime kwargs override stored defaults for explicit one-off evaluations.
+        return self.H_func(*args, **{**self._parameters, **kwargs})
 
-    # Setters and getters are defined for the critical attributes of the Hamiltonian class, so we have control over how
+    # Setters and getters are defined for the critical attributes of the ControlModel class, so we have control over how
     # the user modifies them. It is important that the correct flags are updated when these attributes are changed
     @property
     def H_func(self):
@@ -107,7 +108,7 @@ class Hamiltonian:
             self._H_func = func
         else:
             raise ImmutableConfigurationError("H_func is already set and cannot be changed. If you want to change it,"
-                                              " please create a new instance of the Hamiltonian class.")
+                                              " please create a new instance of the ControlModel class.")
 
     @property
     def partial_H_func(self):
@@ -122,7 +123,7 @@ class Hamiltonian:
         else:
             raise ImmutableConfigurationError(
                 "partial_H_func is already set and cannot be changed. If you want to change it,"
-                " please create a new instance of the Hamiltonian class.")
+                " please create a new instance of the ControlModel class.")
 
     @property
     def control_name(self):
@@ -304,11 +305,15 @@ class Hamiltonian:
 
     @num_steps.setter
     def num_steps(self, value):
+        if value is None:  # Keep the previous value
+            return
+
         if value == self._num_steps:  # Keep the previous value
             return
 
-        if not isinstance(value, int) or value <= 0:
-            raise InvalidControlParameterError("Number of steps must be a positive integer.")
+        if not isinstance(value, int) or value < 3:
+            raise InvalidControlParameterError(
+                "Number of steps must be an integer >= 3 to support pulse interpolation.")
 
         if value == self._num_steps:  # Keep the previous value
             return
@@ -335,7 +340,7 @@ class Hamiltonian:
 
     @property
     def eigenenergies(self):
-        """Return Hamiltonian eigenenergies, solving the eigenproblem if needed."""
+        """Return ControlModel eigenenergies, solving the eigenproblem if needed."""
         if self._flags['eigenproblem_solved']:
             return self._energies
 
@@ -355,8 +360,8 @@ class Hamiltonian:
 
     def set_parameters(self, **params):
         """
-        Set the _parameters for the Hamiltonian. This method allows you to specify any _parameters that are needed to
-        compute the Hamiltonian and its partial derivative. The _parameters should be provided as keyword arguments,
+        Set the _parameters for the ControlModel. This method allows you to specify any _parameters that are needed to
+        compute the ControlModel and its partial derivative. The _parameters should be provided as keyword arguments,
         e.g., set_parameters(param1=value1, param2=value2, ...), and they will be stored. If a single parameter is
         updated, others will not be affected.
         """
@@ -372,7 +377,8 @@ class Hamiltonian:
     def set_control(self, control_name: Optional[str] = None, pulse_initial: Optional[float] = None,
                     pulse_final: Optional[float] = None, initial_state: Optional[int] = None,
                     final_state: Optional[int] = None, alpha: Optional[float] = None, beta: Optional[float] = None,
-                    dia_alpha: Optional[float] = None, dia_beta: Optional[float] = None, num_steps: int = 2 ** 10 + 1):
+                    dia_alpha: Optional[float] = None, dia_beta: Optional[float] = None,
+                    num_steps: Optional[int] = None):
         """
         Set the control _parameters for the optimization problem. This method allows you to specify the control
         _parameters such as the name of the control parameter, the initial and final values of the control pulse, ....
@@ -383,7 +389,7 @@ class Hamiltonian:
         ----------
         control_name : Optional[str]
             The name of the control parameter (e.g., "lambda"). This is used to identify the control parameter in the
-             Hamiltonian function.
+             ControlModel function.
         pulse_initial : Optional[float]
             The initial value of the control pulse. This is the value of the control parameter at the beginning of the
              pulse.
@@ -407,10 +413,10 @@ class Hamiltonian:
         dia_beta : Optional[float]
             The exponent beta used in the diabatic passage contribution to the metric tensor. This parameter controls
              the weighting of the matrix elements in the diabatic passage contribution to the metric tensor.
-        num_steps : int
+        num_steps : Optional[int]
             The number of steps to use in the discretization of the control pulse. This determines the resolution of
-             the control pulse and the accuracy of the numerical solution. Higher values will yield a more accurate
-              solution but will also increase the computational cost.
+            the control pulse and the accuracy of the numerical solution. If omitted and no previous value exists,
+            a default of ``2**10 + 1`` is used.
         """
 
         self.control_name = control_name
@@ -422,14 +428,19 @@ class Hamiltonian:
         self.beta = beta
         self.dia_alpha = dia_alpha
         self.dia_beta = dia_beta
-        self.num_steps = num_steps
+
+        # Keep explicit user value; otherwise lazily initialize to default on first configuration.
+        if num_steps is None and self._num_steps is None:
+            self.num_steps = 2 ** 10 + 1
+        else:
+            self.num_steps = num_steps
 
     def solve_problem(self, pulse_accuracy: int = 1000, solver: Optional[Callable] = None,
                       solver_kwargs: Optional[dict] = None, metric_integrator: Optional[Callable] = None,
                       metric_integrator_kwargs: Optional[dict] = None, ):
         """
         Solve the optimization problem to find the optimal control pulse. This method computes the metric tensor based
-        on the energies and matrix elements of the Hamiltonian, and then solves the ODE for the control pulse using the
+        on the energies and matrix elements of the ControlModel, and then solves the ODE for the control pulse using the
         computed metric tensor. Note that this method does not synthesize the pulse itself, for that you need to call
         the synthesize_pulse() method after solving the problem.
 
@@ -504,13 +515,13 @@ class Hamiltonian:
         if self._flags['dia_list_computed']:
             return  # If the diabatic passage list is already computed, skip the computation
 
-        dim = self.eigenenergies.shape[1]  # Get the dimension of the Hamiltonian from the energies array
+        dim = self.eigenenergies.shape[1]  # Get the dimension of the ControlModel from the energies array
         self._dia_list = build_diab(initial_state=self.initial_state, final_state=self.final_state, dim=dim)
         self._flags['dia_list_computed'] = True  # Mark the diabatic passage list as computed to avoid recomputation
 
     def _solve_eigenproblem(self):
         """
-        Solve the eigenproblem for the Hamiltonian at each control value to obtain the energies and matrix elements.
+        Solve the eigenproblem for the ControlModel at each control value to obtain the energies and matrix elements.
         This method is called internally by solve_problem() if the eigenproblem has not been solved yet. The results are
         stored in self.eigenenergies and self._matrix_elements for later use in computing the metric tensor.
         """
@@ -541,7 +552,7 @@ class Hamiltonian:
 
     def _compute_metric_tensor(self):
         """
-        Compute the metric tensor G_tensor based on the energies and matrix elements of the Hamiltonian. If the
+        Compute the metric tensor G_tensor based on the energies and matrix elements of the ControlModel. If the
         eigenproblem has not been solved yet, solve it first to obtain the energies and matrix elements.
         """
         if self._flags['metric_computed']:
@@ -555,6 +566,15 @@ class Hamiltonian:
 
         dx = float(np.abs(self._control_pulse[1] - self._control_pulse[0]))
         metric_values = np.sqrt(self._metric_tensor)
+
+        # scipy.integrate.romb requires sample count n = 2**k + 1.
+        if self._metric_integrator is romb:
+            n_samples = metric_values.size
+            power_minus_one = n_samples - 1
+            if power_minus_one <= 0 or (power_minus_one & (power_minus_one - 1)) != 0:
+                raise InvalidControlParameterError(
+                    f"num_steps={n_samples} is incompatible with romb. Use num_steps=2**k+1, "
+                    "or pass a different metric_integrator to solve_problem(...).")
 
         try:
             self._a_tilde = float(self._metric_integrator(metric_values, dx=dx, **self._metric_integrator_kwargs))
@@ -612,7 +632,7 @@ class Hamiltonian:
 
     def _compute_numerical_partial_H(self) -> np.ndarray:
         """
-        Compute the numerical partial derivative of the Hamiltonian with respect to the control parameter using finite
+        Compute the numerical partial derivative of the ControlModel with respect to the control parameter using finite
         differences. This method is used when the analytical partial derivative function is not provided.
         """
 
@@ -675,8 +695,11 @@ class Hamiltonian:
         if hasattr(sol, "success") and not sol.success:
             raise SolverError(getattr(sol, "message", "ODE solver failed."))
 
-        if isinstance(sol, tuple) and len(sol) == 2:
-            t_arr, y_arr = sol
+        if isinstance(sol, tuple):
+            if len(sol) != 2:
+                raise SolverError("Solver tuple output must be a (t, y) pair.")
+            t_arr = sol[0]
+            y_arr = sol[1]
         elif hasattr(sol, "t") and hasattr(sol, "y"):
             t_arr, y_arr = sol.t, sol.y
         else:
@@ -710,7 +733,7 @@ class Hamiltonian:
                          xlabel: Optional[str] = None, ylabel: Optional[str] = None, title: Optional[str] = None,
                          **plot_kwargs):
         """
-        Plot Hamiltonian eigenvalues as a function of the control parameter.
+        Plot ControlModel eigenvalues as a function of the control parameter.
 
         Parameters
         ----------
@@ -725,7 +748,7 @@ class Hamiltonian:
         ylabel : Optional[str]
             Label for the y-axis. Defaults to ``"Energy"`` when not provided.
         title : Optional[str]
-            Plot title. Defaults to ``"Hamiltonian Eigenvalues"`` when not provided.
+            Plot title. Defaults to ``"ControlModel Eigenvalues"`` when not provided.
         **plot_kwargs
             Extra kwargs forwarded to ``ax.plot`` for each energy branch.
 
@@ -751,7 +774,7 @@ class Hamiltonian:
 
         ax.set_xlabel(self.control_name if xlabel is None else xlabel)
         ax.set_ylabel("Energy" if ylabel is None else ylabel)
-        ax.set_title("Hamiltonian Eigenvalues" if title is None else title)
+        ax.set_title("ControlModel Eigenvalues" if title is None else title)
 
         if legend:
             ax.legend(**(legend_kwargs or {}))
@@ -759,13 +782,13 @@ class Hamiltonian:
         return fig, ax
 
     def plot_metric_tensor(self, fig=None, ax=None, legend: bool = True, legend_kwargs: Optional[dict] = None,
-                           xlabel: Optional[str] = None, ylabel: Optional[str] = None,
-                           title: Optional[str] = None, **plot_kwargs):
+                           xlabel: Optional[str] = None, ylabel: Optional[str] = None, title: Optional[str] = None,
+                           **plot_kwargs):
         """
         Plot the metric tensor (G tensor) as a function of the control parameter.
 
         If the metric tensor is not available yet, it is computed from the current
-        Hamiltonian/control configuration.
+        ControlModel/control configuration.
 
         Parameters
         ----------
@@ -850,7 +873,7 @@ class Hamiltonian:
         missing_params = []
 
         if self.control_name is None:
-            missing_params.append("name")
+            missing_params.append("control_name")
         if self.pulse_initial is None:
             missing_params.append("pulse_initial")
         if self.pulse_final is None:
@@ -863,6 +886,8 @@ class Hamiltonian:
             missing_params.append("alpha")
         if self.beta is None:
             missing_params.append("beta")
+        if self.num_steps is None:
+            missing_params.append("num_steps")
 
         if self._initial_state != self._final_state:
             if self.dia_alpha is None:
@@ -881,7 +906,7 @@ class Hamiltonian:
         Generate a summary string of the current control _parameters and settings. This method creates a formatted
         string that provides a clear overview of the control _parameters, their values, and any relevant settings for
         the optimization problem. The summary can be used for logging, debugging, or displaying the current state of the
-        Hamiltonian object.
+        ControlModel object.
         """
         hamiltonian_params = (", ".join(
             f"{key}: {value}" for key, value in self._parameters.items()) if self._parameters else "❌ not set")
@@ -892,10 +917,10 @@ class Hamiltonian:
                                f"{self.dia_beta if self.dia_beta is not None else '❌ not set'}"
                                ")")
 
-        summary_lines = ["------------------ Hamiltonian Control Summary ------------------",
-                         f"Hamiltonian: {'✅ set' if self.H_func is not None else '❌ not set'}",
-                         f"Partial Hamiltonian: {'✅ set' if self.partial_H_func is not None else '❌ not set'}",
-                         f"Hamiltonian parameters: {hamiltonian_params}",
+        summary_lines = ["------------------ ControlModel Control Summary ------------------",
+                         f"ControlModel: {'✅ set' if self.H_func is not None else '❌ not set'}",
+                         f"Partial ControlModel: {'✅ set' if self.partial_H_func is not None else '❌ not set'}",
+                         f"ControlModel parameters: {hamiltonian_params}",
                          f"Control name → {self.control_name if self.control_name is not None else '❌ not set'}",
                          f"Pulse initial → {self.pulse_initial if self.pulse_initial is not None else '❌ not set'}",
                          f"Pulse final → {self.pulse_final if self.pulse_final is not None else '❌ not set'}",
@@ -917,7 +942,7 @@ class Hamiltonian:
         print(self._generate_summary())
 
     def __str__(self):
-        return (f"Hamiltonian(control_name={self.control_name}, pulse_initial={self.pulse_initial}, "
+        return (f"ControlModel(control_name={self.control_name}, pulse_initial={self.pulse_initial}, "
                 f"pulse_final={self.pulse_final}, initial_state={self.initial_state}, alpha={self.alpha}, "
                 f"beta={self.beta}, num_steps={self.num_steps})")
 
