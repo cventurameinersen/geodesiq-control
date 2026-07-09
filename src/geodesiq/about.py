@@ -1,4 +1,4 @@
-"""Command-line diagnostics for geodesiq and runtime dependencies."""
+# About geodesiq-control
 
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 
 from ._meta import __author__, __version__
+
+__all__ = ["about"]
 
 __all__ = ["about"]
 
@@ -38,17 +40,23 @@ def about() -> None:
     print("===================================")
     print(f"Authors:            {__author__}")
     print(f"geodesiq Version:   {__version__}")
+    print(f"Python Version:     {platform.python_version()} ({sys.implementation.name})")
+    print(f"Number of CPUs:     {os.cpu_count()}")
+    print(f"Platform Info:      {platform.system()} ({platform.machine()}, {platform.machine()}))")
+    print(f"Installation path:  {_installation_path()}")
+
+    print("\nCore Dependencies:")
     print(f"Numpy Version:      {_module_version('numpy')}")
     print(f"Scipy Version:      {_module_version('scipy')}")
     print(f"QuTiP Version:      {_module_version('qutip')}")
     print(f"Matplotlib Version: {_module_version('matplotlib')}")
-    print(f"Python Version:     {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
-    print(f"Number of CPUs:     {os.cpu_count()}")
-    print(f"Platform Info:      {platform.system()} ({platform.machine()})")
-    print(f"Installation path:  {_installation_path()}")
-    print()
+
+    print("\n")
+    print("=" * 50)
+    print("Please cite geodesiq in your publication:")
+    print("Your Citation Information Here")
+    print("=" * 50)
 
 
 if __name__ == "__main__":
     about()
-

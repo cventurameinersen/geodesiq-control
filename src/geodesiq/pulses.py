@@ -8,6 +8,9 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from scipy.interpolate import interp1d
 
+from scipy.signal import ShortTimeFFT
+from scipy.signal.windows import hann
+
 from ._meta import PACKAGE_NAME
 from .exceptions import IOErrorGeodesiQ, MissingArgsError, ValidationError
 
@@ -109,26 +112,39 @@ class PulseControl:
 
         return new_s, approx_sol
 
-    def fourier_spectrum(self) -> Tuple[np.ndarray, np.ndarray]:
+
+    def fourier_spectrum(self, window_len: int = 256, hop: int = 32) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Compute the Fourier spectrum of the control pulse.
+        Compute the Short-Time Fourier Transform (STFT) spectrum of the control pulse.
+
+        Parameters
+        ----------
+        window_len : int, optional
+            The length of the window segment in number of samples. Default is 256.
+        hop : int, optional
+            The number of samples to advance between successive windows. Default is 64.
 
         Returns
         -------
-        frequencies: np.ndarray
-            Positive frequencies corresponding to the Fourier spectrum.
-        magnitude: np.ndarray
-            Magnitude spectrum of the control pulse (absolute value of the FFT).
-
+        frequencies : np.ndarray
+            Frequencies corresponding to the STFT rows.
+        times : np.ndarray
+            Time array corresponding to the centers of each STFT time slice.
+        magnitude : np.ndarray
+            2D magnitude spectrum of the control pulse (shape: [frequencies, times]).
         """
-        # Compute the sampling rate from the rescaled time array
-        dt = np.abs(self._pulse_times[1] - self._pulse_times[0])  # Uniform spacing by construction
+        dt = np.abs(self._pulse_times[1] - self._pulse_times[0])
+        fs = 1.0 / dt
+        win = hann(window_len, sym=False)
+        sft = ShortTimeFFT(win, hop=hop, fs=fs, scale_to='magnitude')
 
-        # Compute FFT of the pulse and corresponding frequencies
-        magnitude = np.abs(np.fft.rfft(self._pulse, norm='ortho'))
-        frequencies = np.fft.rfftfreq(len(self._pulse), dt)
+        stft_matrix = sft.stft(self._pulse)
 
-        return frequencies, magnitude
+        magnitude = np.abs(stft_matrix)
+        frequencies = sft.f
+        times = sft.t(len(self._pulse))
+
+        return frequencies, times, magnitude
 
     def filtered_pulse(self, cutoff_freq, filter_order: int = 3) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -213,7 +229,7 @@ class PulseControl:
         filename: str
             Name for the data file saved.
         file_extension: str
-            Data type the pulse should be stored in (i.e. 'txt', 'npy'). Default is 'npy'.
+            Data type the pulse should be stored in (i.e. 'txt', 'npy', 'csv'). Default is 'npy'.
         overwrite: bool
             Ensures accidental overwrites.
         """
@@ -240,8 +256,11 @@ class PulseControl:
         elif file_extension == 'txt':
             txt_data: np.ndarray = np.column_stack((t, pulse))
             np.savetxt(output_path, txt_data, delimiter=",", header="t,pulse", comments="", fmt="%.8f")
+        elif file_extension == 'csv':
+            csv_data = np.column_stack((t, pulse))
+            np.savetxt(output_path, csv_data, delimiter=",", header="t,pulse", comments="", fmt="%.8f")
         else:
-            raise MissingArgsError(f"Unsupported data_type '{file_extension}'. Supported types are: 'npy' and 'txt'. ")
+            raise MissingArgsError(f"Unsupported data_type '{file_extension}'. Supported types are: 'npy', 'txt', and 'csv'. ")
 
         # ToDo: Add option to export pulse data in csv
 

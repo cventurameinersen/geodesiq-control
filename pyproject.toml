@@ -12,7 +12,7 @@ authors = [
     { name = "David Fernández-Fernández", email = "david.fernandezf@hotmail.com" },
     { name = "Christian Ventura Meinersen", email = "C.VenturaMeinersen@tudelft.nl" }
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 keywords = ["quantum-control", "optimal-control", "geodesic", "quantum-computing", "python", "spin-qubits",
     "superconducting-qubits", "trapped-ions", "quantum-dots"]
 classifiers = [
