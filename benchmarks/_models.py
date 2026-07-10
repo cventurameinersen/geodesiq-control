@@ -1,5 +1,5 @@
 """
-ControlModel factory helpers for the geodesiq benchmark suite.
+Hamiltonian factory helpers for the geodesiq benchmark suite.
 
 All factories return a fully configured :class:`~geodesiq.ControlModel` ready
 to be passed to ``solve_problem()``.
@@ -11,12 +11,13 @@ import numpy as np
 
 from geodesiq import ControlModel
 
+
 # ---------------------------------------------------------------------------
-# Internal ControlModel builders
+# Internal Hamiltonian builders
 # ---------------------------------------------------------------------------
 
 def _lz_H_dH(coupling: float = 0.5):
-    """2×2 Landau-Zener ControlModel  H(λ) = λ·σ_z + coupling·σ_x."""
+    """2×2 Landau-Zener Hamiltonian  H(λ) = λ·σ_z + coupling·σ_x."""
     D = np.array([[1.0, 0.0], [0.0, -1.0]])
     C = np.array([[0.0, coupling], [coupling, 0.0]])
 
@@ -31,7 +32,7 @@ def _lz_H_dH(coupling: float = 0.5):
 
 def _chain_H_dH(N: int, coupling: float = 0.5, seed: int = 42):
     """
-    N-level chain ControlModel with a single λ-dependent drive:
+    N-level chain Hamiltonian with a single λ-dependent drive:
 
         H(λ) = λ · D  +  coupling · C
 
@@ -88,7 +89,7 @@ def make_ham(dim: int = 2, num_steps: int = 2 ** 8 + 1, analytical_partial: bool
     ----------
     dim
         Hilbert-space dimension.  ``dim=2`` uses the Landau-Zener model;
-        larger values use an N-level chain ControlModel.
+        larger values use an N-level chain Hamiltonian.
     num_steps
         Number of λ grid points (controls the resolution of the eigenproblem
         sweep and is the main source of scaling for that stage).
@@ -105,9 +106,9 @@ def make_ham(dim: int = 2, num_steps: int = 2 ** 8 + 1, analytical_partial: bool
     alpha, beta
         Metric tensor exponents.
     coupling
-        Off-diagonal coupling strength passed to the ControlModel model.
+        Off-diagonal coupling strength passed to the Hamiltonian.
     seed
-        RNG seed for the chain ControlModel's random noise term.
+        RNG seed for the chain Hamiltonian's random noise term.
     """
     if dim == 2:
         H, dH = _lz_H_dH(coupling=coupling)
