@@ -33,8 +33,11 @@ class Dynamics:
         self._initial_state: int | None = model._initial_state
         self._final_state: int | None = model._final_state
 
-        if not isinstance(hbar, float):
-            raise ValidationError("hbar must be a float.")
+        if not isinstance(hbar, (int, float, np.integer, np.floating)) or isinstance(hbar, bool):
+            raise ValidationError("hbar must be a finite positive number.")
+        hbar = float(hbar)
+        if not np.isfinite(hbar) or hbar <= 0:
+            raise ValidationError("hbar must be a finite positive number.")
         self._hbar: float = hbar
 
         if self._control_pulse is None or self._control_sol is None:
