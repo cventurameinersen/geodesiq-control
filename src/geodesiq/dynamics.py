@@ -43,7 +43,7 @@ class Dynamics:
         self._control_sol = np.asarray(self._control_sol, dtype=float)
 
         self._duration = duration
-        self._pulse_times: np.ndarray = duration * np.linspace(0, 1, len(self._control_sol))  # type: ignore[arg-type]
+        self._pulse_times: np.ndarray = duration * np.linspace(0, 1, len(self._control_sol))
 
     def _control_kwargs(self, control_value: float) -> dict[str, Any]:
         control_name = self._control_name

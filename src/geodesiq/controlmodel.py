@@ -1,4 +1,4 @@
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, cast
 
 import numpy as np
 from scipy.differentiate import jacobian
@@ -54,38 +54,38 @@ class ControlModel:
 
         # Initialize parameters and control settings
         self._parameters: dict[str, Any] = {}
-        self._control_name = None
-        self._pulse_initial = None
-        self._pulse_final = None
-        self._initial_state = None
-        self._final_state = None
-        self._alpha = None
-        self._beta = None
-        self._dia_alpha = None
-        self._dia_beta = None
-        self._num_steps = None
+        self._control_name: str | None = None
+        self._pulse_initial: float | None = None
+        self._pulse_final: float | None = None
+        self._initial_state: int | None = None
+        self._final_state: int | None = None
+        self._alpha: float | None = None
+        self._beta: float | None = None
+        self._dia_alpha: float | None = None
+        self._dia_beta: float | None = None
+        self._num_steps: int | None = None
 
         # Initialize energy gaps and matrix elements to None (to be computed in self.solve_problem())
-        self._energies = None
-        self._matrix_elements = None
+        self._energies: np.ndarray | None = None
+        self._matrix_elements: np.ndarray | None = None
 
         # Initialize metric tensor and normalization factor to None (to be computed in self.solve_problem())
-        self._dia_list = None
-        self._metric_tensor = None
-        self._a_tilde = None
+        self._dia_list: np.ndarray | None = None
+        self._metric_tensor: np.ndarray | None = None
+        self._a_tilde: float | None = None
 
         # Initialize pulse parameters
-        self._s = None
-        self._control_pulse = None
-        self._control_sol = None
-        self._pulse = None
+        self._s: np.ndarray | None = None
+        self._control_pulse: np.ndarray | None = None
+        self._control_sol: np.ndarray | None = None
+        self._pulse: Any = None
 
         # Numerical integration configuration (user-overridable in solve_problem).
         self._solver = solve_ivp
         self._solver_kwargs: dict[str, Any] = {}
         self._metric_integrator = romb
         self._metric_integrator_kwargs: dict[str, Any] = {}
-        self._previous_pulse_accuracy = None  # To track changes in pulse accuracy for ODE solving
+        self._previous_pulse_accuracy: int | None = None  # To track changes in pulse accuracy for ODE solving
 
     def __call__(self, *args, **kwargs) -> np.ndarray:
         # Return the ControlModel function if the object is called directly, allowing for easy evaluation of the
@@ -96,7 +96,9 @@ class ControlModel:
     def _evaluation_kwargs(self, control_value: float) -> dict[str, Any]:
         if self.control_name is None:
             raise MissingControlParameterError("control_name must be set before evaluating the Hamiltonian.")
-        return {**self._parameters, self.control_name: float(control_value)}
+        control_name = self.control_name
+        assert control_name is not None
+        return {**self._parameters, control_name: float(control_value)}
 
     def evaluate_hamiltonian(self, control_value: float) -> np.ndarray:
         """Evaluate and validate the Hamiltonian at one control value."""
@@ -138,11 +140,11 @@ class ControlModel:
                 " please create a new instance of the ControlModel class.")
 
     @property
-    def control_name(self) -> str:
+    def control_name(self) -> str | None:
         return self._control_name
 
     @control_name.setter
-    def control_name(self, name: str):
+    def control_name(self, name: str | None):
         if name is None:  # Keep the previous value
             return
         if not isinstance(name, str):
@@ -154,10 +156,10 @@ class ControlModel:
 
     @property
     def pulse_initial(self) -> float:
-        return self._pulse_initial
+        return cast(float, self._pulse_initial)
 
     @pulse_initial.setter
-    def pulse_initial(self, value: float):
+    def pulse_initial(self, value: float | None):
         if value is None:  # Keep the previous value
             return
 
@@ -177,10 +179,10 @@ class ControlModel:
 
     @property
     def pulse_final(self) -> float:
-        return self._pulse_final
+        return cast(float, self._pulse_final)
 
     @pulse_final.setter
-    def pulse_final(self, value: float):
+    def pulse_final(self, value: float | None):
         if value is None:  # Keep the previous value
             return
 
@@ -199,10 +201,10 @@ class ControlModel:
 
     @property
     def initial_state(self) -> int:
-        return self._initial_state
+        return cast(int, self._initial_state)
 
     @initial_state.setter
-    def initial_state(self, value: int):
+    def initial_state(self, value: int | None):
         if value is None:  # Keep the previous value
             return
 
@@ -229,10 +231,10 @@ class ControlModel:
 
     @property
     def final_state(self) -> int:
-        return self._final_state
+        return cast(int, self._final_state)
 
     @final_state.setter
-    def final_state(self, value: int):
+    def final_state(self, value: int | None):
         if value is None:  # Keep the previous value
             return
 
@@ -255,10 +257,10 @@ class ControlModel:
 
     @property
     def alpha(self) -> float:
-        return self._alpha
+        return cast(float, self._alpha)
 
     @alpha.setter
-    def alpha(self, value: float):
+    def alpha(self, value: float | None):
         if value is None:  # Keep the previous value
             return
 
@@ -273,10 +275,10 @@ class ControlModel:
 
     @property
     def beta(self) -> float:
-        return self._beta
+        return cast(float, self._beta)
 
     @beta.setter
-    def beta(self, value: float):
+    def beta(self, value: float | None):
         if value is None:  # Keep the previous value
             return
 
@@ -294,7 +296,7 @@ class ControlModel:
         return self._dia_alpha
 
     @dia_alpha.setter
-    def dia_alpha(self, value: float):
+    def dia_alpha(self, value: float | None):
         if value is None:  # Keep the previous value
             return
 
@@ -312,7 +314,7 @@ class ControlModel:
         return self._dia_beta
 
     @dia_beta.setter
-    def dia_beta(self, value: float):
+    def dia_beta(self, value: float | None):
         if value is None:  # Keep the previous value
             return
 
@@ -327,10 +329,10 @@ class ControlModel:
 
     @property
     def num_steps(self) -> int:
-        return self._num_steps
+        return cast(int, self._num_steps)
 
     @num_steps.setter
-    def num_steps(self, value: int):
+    def num_steps(self, value: int | None):
         if value is None:  # Keep the previous value
             return
 
@@ -349,39 +351,35 @@ class ControlModel:
 
     @property
     def control_sol(self) -> np.ndarray:
-        if self._flags['ode_solved']:
-            return self._control_sol
-        else:
+        if not self._flags['ode_solved']:
             self.solve_problem()  # Attempt to solve the ODE if not already solved
-            return self._control_sol
+        assert self._control_sol is not None
+        return self._control_sol
 
     @property
     def pulse(self) -> np.ndarray:
         all_flags_check = self._flags.all()
-        if all_flags_check:
-            return self._pulse
-        else:
+        if not all_flags_check:
             self.solve_problem()  # Attempt to solve the pulse if not already solved
-            return self._pulse
+        assert self._pulse is not None
+        return cast(np.ndarray, self._pulse)
 
     @property
     def eigenenergies(self) -> np.ndarray:
         """Return ControlModel eigenenergies, solving the eigenproblem if needed."""
-        if self._flags['eigenproblem_solved']:
-            return self._energies
-
-        self._check_eigensystem_parameters()
-        self._solve_eigenproblem()
+        if not self._flags['eigenproblem_solved']:
+            self._check_eigensystem_parameters()
+            self._solve_eigenproblem()
+        assert self._energies is not None
         return self._energies
 
     @property
     def control_pulse(self) -> np.ndarray:
         """Return the control-parameter grid, solving the eigenproblem if needed."""
-        if self._flags['eigenproblem_solved']:
-            return self._control_pulse
-
-        self._check_eigensystem_parameters()
-        self._solve_eigenproblem()
+        if not self._flags['eigenproblem_solved']:
+            self._check_eigensystem_parameters()
+            self._solve_eigenproblem()
+        assert self._control_pulse is not None
         return self._control_pulse
 
     def set_parameters(self, **parameters):
@@ -580,10 +578,17 @@ class ControlModel:
         if self._flags['eigenproblem_solved']:
             return  # If the eigenproblem is already solved, skip the computation
 
-        self._control_pulse = np.linspace(self.pulse_initial, self.pulse_final, num=self.num_steps)
+        self._check_eigensystem_parameters()
+        control_name = self.control_name
+        pulse_initial = self.pulse_initial
+        pulse_final = self.pulse_final
+        num_steps = self.num_steps
+        assert control_name is not None
 
-        full_hamiltonian = np.array(
-            [self.H_func(**{self.control_name: lam, **self._parameters}) for lam in self._control_pulse])
+        control_pulse = np.linspace(pulse_initial, pulse_final, num=num_steps)
+        self._control_pulse = control_pulse
+
+        full_hamiltonian = np.array([self.H_func(**{control_name: lam, **self._parameters}) for lam in control_pulse])
 
         self._energies, eigenvectors = np.linalg.eigh(full_hamiltonian)
 
@@ -594,7 +599,7 @@ class ControlModel:
         else:
             # Use the provided analytical partial derivative function
             full_partial_H = np.array(
-                [self.partial_H_func(**{self.control_name: lam, **self._parameters}) for lam in self._control_pulse])
+                [self.partial_H_func(**{control_name: lam, **self._parameters}) for lam in control_pulse])
 
         self._matrix_elements = np.abs(
             np.einsum('...ij,...jk,...kl->...il', eigenvectors.conj().transpose(0, 2, 1), full_partial_H, eigenvectors))
@@ -721,6 +726,9 @@ class ControlModel:
         dH_dx
             Derivative with shape (n_points, *H_shape).
         """
+        if self._control_pulse is None:
+            raise ValueError("x_grid is unavailable before the eigenproblem grid is initialized.")
+
         x_grid = np.asarray(self._control_pulse, dtype=float)
 
         if x_grid.ndim != 1:
@@ -742,7 +750,7 @@ class ControlModel:
         tolerances = {"atol": 1e-10, "rtol": 1e-8, }
 
         # Scalar evaluation to determine the Hamiltonian shape.
-        H_reference = np.asarray(self._H_func(**self._evaluation_kwargs(self._control_pulse[0])), dtype=np.complex128, )
+        H_reference = np.asarray(self._H_func(**self._evaluation_kwargs(float(x_grid[0]))), dtype=np.complex128, )
 
         H_shape = H_reference.shape
         n_elements = H_reference.size
@@ -898,6 +906,8 @@ class ControlModel:
             ``(fig, ax)`` with the generated plot.
         """
         self._check_eigensystem_parameters()
+        control_name = self.control_name
+        assert control_name is not None
 
         if ax is None:
             import matplotlib.pyplot as plt
@@ -912,7 +922,7 @@ class ControlModel:
         for level in range(self.eigenenergies.shape[1]):
             ax.plot(self._control_pulse, self.eigenenergies[:, level], label=f"E{level}", **plot_kwargs)
 
-        ax.set_xlabel(self.control_name if xlabel is None else xlabel)
+        ax.set_xlabel(control_name if xlabel is None else xlabel)
         ax.set_ylabel("Energy" if ylabel is None else ylabel)
         ax.set_title("ControlModel Eigenvalues" if title is None else title)
 
@@ -955,6 +965,10 @@ class ControlModel:
         self._check_control_parameters()
         self._solve_eigenproblem()
         self._compute_metric_tensor()
+        control_name = self.control_name
+        assert control_name is not None
+        assert self._control_pulse is not None
+        assert self._metric_tensor is not None
 
         if ax is None:
             import matplotlib.pyplot as plt
@@ -968,7 +982,7 @@ class ControlModel:
 
         ax.plot(self._control_pulse, self._metric_tensor, label="G", **plot_kwargs)
 
-        ax.set_xlabel(self.control_name if xlabel is None else xlabel)
+        ax.set_xlabel(control_name if xlabel is None else xlabel)
         ax.set_ylabel("G tensor" if ylabel is None else ylabel)
         ax.set_title("G tensor" if title is None else title)
 
@@ -1002,8 +1016,9 @@ class ControlModel:
         self.solve_problem()
         if self._control_sol is None:
             raise SolverError("Cannot synthesize a pulse before the control solution is available.")
-        self._pulse = PulseControl(self._control_sol, duration, method, pulse_args, pulse_kwargs)
-        return self._pulse()
+        pulse = PulseControl(self._control_sol, duration, method, pulse_args, pulse_kwargs)
+        self._pulse = pulse
+        return pulse()
 
     def _check_control_parameters(self):
         """
