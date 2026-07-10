@@ -35,7 +35,10 @@ class Dynamics:
 
         if not isinstance(hbar, (int, float, np.integer, np.floating)) or isinstance(hbar, bool):
             raise ValidationError("hbar must be a finite positive number.")
-        hbar = float(hbar)
+        try:
+            hbar = float(hbar)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValidationError("hbar must be a finite positive number.") from exc
         if not np.isfinite(hbar) or hbar <= 0:
             raise ValidationError("hbar must be a finite positive number.")
         self._hbar: float = hbar
