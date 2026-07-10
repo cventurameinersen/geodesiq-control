@@ -6,7 +6,7 @@
 
 [Installation](#installation) | [Example code](#example-code) | [Citing geodesiq](#citing-geodesiq)
 
-`geodesiq` is a Python package for optimal pulse control of ControlModel parameters for generic quantum systems.
+`geodesiq` is a Python package for optimal pulse control of Hamiltonian parameters for generic quantum systems.
 
 
 [//]: # (# Documentation)
@@ -24,15 +24,15 @@ pip install geodesiq
 # Example code
 
 Here is an example code based on the two-level Landau-Zener problem $H[z(t)]=z(t)\sigma_z+x \sigma_x$ with control
-parameter $z(t)$. To compute the optimal pulse, you establish the base ControlModel and (optionally) the partial
-derivative of the ControlModel with respect to the control parameter.
+parameter $z(t)$. To compute the optimal pulse, you define the Hamiltonian and, optionally, its partial
+derivative with respect to the control parameter.
 
 ```python
 import numpy as np
 from geodesiq import ControlModel
 
 
-# ----- Define ControlModel and its gradient -----
+# ----- Define the Hamiltonian and its derivative -----
 def H_fun(x, z):
     return np.array([[z, x], [x, -z]])
 
@@ -79,6 +79,6 @@ Use the following checks before submitting changes:
 ```bash
 uv run ruff check .
 uv run mypy
-uv run pytest -q
+uv run pytest
 uv run python -m build
 ```
