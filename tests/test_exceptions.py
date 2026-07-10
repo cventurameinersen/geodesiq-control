@@ -1,7 +1,4 @@
-from geodesiq.exceptions import (
-    GeodesiQError,
-    ValidationError,
-)
+from geodesiq.exceptions import (GeodesiQError, ValidationError, )
 
 
 def test_exception_hierarchy():

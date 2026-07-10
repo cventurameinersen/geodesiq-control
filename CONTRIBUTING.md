@@ -62,9 +62,9 @@ python dev/bump_version.py --major   # e.g. 0.2.0 → 1.0.0
 python dev/bump_version.py 1.2.3
 ```
 
-The script will:
-1. Update `__version__` in `src/geodesiq/_meta.py`.
-2. Insert a new dated section for the new version in `CHANGELOG.md`.
+The script accepts PEP 440 versions, rejects non-increasing versions, validates the changelog, supports dry runs, and updates `_meta.py` and `CHANGELOG.md` with rollback protection.
+
+After the version bump is merged into `main`, create and push the matching tag:
 
 After running the script, commit the changes, push to `dev`, and open a pull request into `main` to trigger the release workflow.
 

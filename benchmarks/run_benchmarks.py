@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Callable
 
 import pandas as pd
+from filelock import FileLock
 from tqdm import tqdm
 
 # ---------------------------------------------------------------------------
@@ -102,10 +103,9 @@ def benchmark_ham(ham: ControlModel, pulse_accuracy: int = 1000, n_repeat: int =
     Benchmark the three internal stages of :meth:`solve_problem` plus the
     full pipeline, in isolation.
 
-    The ControlModel is solved once as a warm-up so all internal caches are
-    populated.  Each stage is then timed by resetting only the relevant flag
-    (which, thanks to the ``Flags`` cascade, automatically invalidates all
-    downstream flags) and calling the corresponding private method.
+    The model is solved once as a warm-up so all caches are populated.
+    Each stage is then timed through the public cache-invalidation and staged
+    solve APIs, keeping the benchmark independent of private implementation details.
 
     Parameters
     ----------
@@ -123,10 +123,9 @@ def benchmark_ham(ham: ControlModel, pulse_accuracy: int = 1000, n_repeat: int =
         Maps stage name → dict with keys ``mean_s``, ``median_s``,
         ``std_s``, ``min_s``, ``max_s``, ``n_inner``.
     """
-    # ── warm-up: fully solve everything once ────────────────────────────────
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        ham.solve_problem(pulse_accuracy=pulse_accuracy)
+    # Warm up once. Warnings are intentionally not suppressed: numerical
+    # invalidity must fail or remain visible in benchmark runs.
+    ham.solve_problem(pulse_accuracy=pulse_accuracy)
 
     results: dict[str, dict] = {}
 
@@ -339,12 +338,19 @@ def save_results(df: pd.DataFrame) -> Path:
     allows filtering by session later.
     """
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    lock_path = HISTORY_FILE.with_suffix(HISTORY_FILE.suffix + ".lock")
+    temporary = HISTORY_FILE.with_suffix(HISTORY_FILE.suffix + f".{os.getpid()}.tmp")
 
-    if HISTORY_FILE.exists():
-        existing = pd.read_parquet(HISTORY_FILE)
-        df = pd.concat([existing, df], ignore_index=True)
-
-    df.to_parquet(HISTORY_FILE, index=False)
+    with FileLock(lock_path):
+        combined = df
+        if HISTORY_FILE.exists():
+            existing = pd.read_parquet(HISTORY_FILE)
+            combined = pd.concat([existing, df], ignore_index=True)
+        try:
+            combined.to_parquet(temporary, index=False)
+            os.replace(temporary, HISTORY_FILE)
+        finally:
+            temporary.unlink(missing_ok=True)
     return HISTORY_FILE
 
 

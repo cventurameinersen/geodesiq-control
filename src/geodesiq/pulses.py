@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Tuple
 
@@ -43,43 +41,52 @@ class PulseControl:
             Keyword arguments for the pulse synthesis (e.g., duration, filter parameters).
         """
 
-        pulse = np.asarray(pulse, dtype=float)
+        values = np.asarray(pulse)
+        if values.ndim != 1:
+            raise ValidationError(f"pulse must be one-dimensional; received shape {values.shape}.")
+        if values.size < 2:
+            raise ValidationError("pulse must contain at least two samples.")
+        if np.iscomplexobj(values):
+            if not np.allclose(values.imag, 0.0):
+                raise ValidationError("pulse must contain real-valued samples.")
+            values = values.real
+        values = np.asarray(values, dtype=float)
+        if not np.all(np.isfinite(values)):
+            raise ValidationError("pulse contains NaN or infinite values.")
 
-        if duration <= 0:
-            raise ValueError("The duration must be positive.")
+        if not isinstance(duration, (int, float, np.integer, np.floating)) or isinstance(duration, bool):
+            raise ValidationError("duration must be a finite positive number.")
+        duration = float(duration)
+        if not np.isfinite(duration) or duration <= 0:
+            raise ValidationError("duration must be a finite positive number.")
+        if method is not None and not isinstance(method, str):
+            raise ValidationError("method must be a string or None.")
+        if pulse_args is not None and not isinstance(pulse_args, tuple):
+            raise ValidationError("pulse_args must be a tuple or None.")
+        if pulse_kwargs is not None and not isinstance(pulse_kwargs, dict):
+            raise ValidationError("pulse_kwargs must be a dictionary or None.")
 
-        times = np.asarray(duration * np.linspace(0, 1, len(pulse)), dtype=float)
-
-        if pulse.ndim != 1:
-            raise ValueError("The pulse must be one-dimensional.")
-
-        if times.ndim != 1:
-            raise ValueError("The time grid must be one-dimensional.")
-
-        if pulse.size < 2:
-            raise ValueError("The pulse must contain at least two points.")
-
-        if pulse.shape != times.shape:
-            raise ValueError("The pulse and time grid must have the same shape.")
-
-        if not np.all(np.isfinite(pulse)):
-            raise ValueError("The pulse contains non-finite values.")
-
-        if not np.all(np.isfinite(times)):
-            raise ValueError("The time grid contains non-finite values.")
-
-        if not np.all(np.diff(times) > 0.0):
-            raise ValueError("The time grid must be strictly increasing.")
-
-        if times[-1] <= times[0]:
-            raise ValueError("The pulse duration must be positive.")
-
-        self._pulse = pulse
+        self._pulse = values.copy()
         self._duration = duration
-        self._pulse_times = times
+        self._pulse_times = np.linspace(0.0, duration, values.size, dtype=float)
         self._method = method
         self._pulse_args = pulse_args if pulse_args is not None else ()
-        self._pulse_kwargs = pulse_kwargs if pulse_kwargs is not None else {}
+        self._pulse_kwargs = dict(pulse_kwargs) if pulse_kwargs is not None else {}
+
+    @property
+    def pulse(self) -> np.ndarray:
+        """Return a copy of the pulse samples."""
+        return self._pulse.copy()
+
+    @property
+    def times(self) -> np.ndarray:
+        """Return a copy of the physical-time sample grid."""
+        return self._pulse_times.copy()
+
+    @property
+    def duration(self) -> float:
+        """Total pulse duration."""
+        return self._duration
 
     def __call__(self):
         """
@@ -164,13 +171,25 @@ class PulseControl:
         magnitude : np.ndarray
             2D magnitude spectrum of the control pulse (shape: [frequencies, times]).
         """
-        if window_len >= len(self._pulse_times):
+        if not isinstance(window_len, (int, np.integer)) or isinstance(window_len, bool) or int(window_len) < 2:
+            raise ValidationError("window_len must be an integer >= 2.")
+        window_len = int(window_len)
+        if window_len >= self._pulse.size:
             raise ValidationError("window_len must be smaller than the length of the STFT array.")
 
-        dt = np.abs(self._pulse_times[1] - self._pulse_times[0])
+        if not isinstance(hop, (int, np.integer)) or isinstance(hop, bool) or int(hop) < 1:
+            raise ValidationError("hop must be a positive integer.")
+        hop = int(hop)
+        if hop > window_len:
+            raise ValidationError("hop must not exceed window_len.")
+
+        dt = float(self._pulse_times[1] - self._pulse_times[0])
+        if not np.isfinite(dt) or dt <= 0:
+            raise ValidationError("Pulse sampling interval must be finite and positive.")
+
         fs = float(1.0 / dt)
         win = hann(window_len, sym=False)
-        sft = ShortTimeFFT(win, hop=hop, fs=fs, scale_to='magnitude')
+        sft = ShortTimeFFT(win, hop=hop, fs=fs, scale_to="magnitude")
 
         stft_matrix = sft.stft(self._pulse)
 
@@ -242,18 +261,15 @@ class PulseControl:
 
         """
         try:
-            import matplotlib.pyplot as plt  # noqa: PLC0415
+            import matplotlib.pyplot as plt
         except ImportError as exc:
             raise ImportError(
                 "matplotlib is required for plot_pulse. Install it with: pip install geodesiq[plot]") from exc
 
-        t, pulse = self._pulse_times, self._pulse
-
         fig, ax = plt.subplots()
-        ax.plot(t, pulse, **plot_kwargs)
-        ax.set_xlabel('Time $t$')
-        ax.set_ylabel('Control Pulse')
-
+        ax.plot(self._pulse_times, self._pulse, **plot_kwargs)
+        ax.set_xlabel("Time $t$")
+        ax.set_ylabel("Control Pulse")
         if show:
             plt.show()
         else:

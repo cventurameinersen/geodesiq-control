@@ -690,7 +690,7 @@ class TestPlotEigenvalues:
 
         assert ax.get_xlabel() == configured_ham.control_name
         assert ax.get_ylabel() == "Energy"
-        assert ax.get_title() == "ControlModel Eigenvalues"
+        assert ax.get_title() == "Hamiltonian eigenenergies"
 
         plt.close(fig)
 

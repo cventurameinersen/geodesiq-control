@@ -98,7 +98,7 @@ def test_plot_pulse_without_showing(default_pulse):
 
     assert isinstance(fig, Figure)
     assert isinstance(ax, Axes)
-    assert ax.get_xlabel() == 'Time $t$'
+    assert ax.get_xlabel() == "Time $t$"
 
 
 def test_plot_pulse_with_show_invokes_matplotlib_show(default_pulse, monkeypatch):

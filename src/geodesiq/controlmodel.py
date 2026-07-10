@@ -3,7 +3,7 @@ from typing import Any, Callable, Optional, cast
 import numpy as np
 from scipy.differentiate import jacobian
 from scipy.integrate import romb, solve_ivp
-from scipy.interpolate import interp1d
+from scipy.interpolate import PchipInterpolator
 
 from ._utils import Flags, build_diab
 from .exceptions import (ImmutableConfigurationError, InvalidControlParameterError, MissingControlParameterError,
@@ -24,28 +24,33 @@ class ControlModel:
     def __init__(self, H_func: Callable[..., np.ndarray], partial_H_func: Optional[Callable[..., np.ndarray]] = None,
                  _flags_verbose: bool = False):
         """
-        Initialize the ControlModel class with the ControlModel function and its partial derivative (if provided).
+        Initialize the ControlModel class with the Hamiltonian function and its partial derivative (if provided).
 
         Parameters
         ----------
         H_func : Callable[..., np.ndarray]
-            A function that takes the control parameter and other parameters as input and returns the ControlModel
+            A function that takes the control parameter and other parameters as input and returns the Hamiltonian
             matrix as a numpy array. The function should be defined such that it can accept the control parameter as a
             keyword argument, e.g., H_func(lambda=..., param1=..., param2=..., ...).
-        partial_H_func : Optional[Callable[..., np.ndarray]]
+        partial_H_func : Callable[..., np.ndarray] | None
             An optional function that takes the control parameter and other parameters as input and returns the partial
-            derivative of the ControlModel with respect to the control parameter as a numpy array.
+            derivative of the Hamiltonian with respect to the control parameter as a numpy array.
             If this function is not provided, the class will compute the numerical partial derivative.
         """
+        if not callable(H_func):
+            raise ValidationError("H_func must be callable.")
+        if partial_H_func is not None and not callable(partial_H_func):
+            raise ValidationError("partial_H_func must be callable when provided.")
+
         self._H_func = H_func
         self._partial_H_func = partial_H_func
 
         # Initialize flags needed to track the state of the computations
         self._flags = Flags(_verbose=_flags_verbose)
-        self._flags.add('eigenproblem_solved')
-        self._flags.add('dia_list_computed')
-        self._flags.add('metric_computed', parents=['eigenproblem_solved', 'dia_list_computed'])
-        self._flags.add('ode_solved', parent='metric_computed')
+        self._flags.add("eigenproblem_solved")
+        self._flags.add("dia_list_computed")
+        self._flags.add("metric_computed", parents=["eigenproblem_solved", "dia_list_computed"])
+        self._flags.add("ode_solved", parent="metric_computed")
 
         if self._partial_H_func is not None:
             self._flag_numerical_partial_H = False
@@ -72,7 +77,7 @@ class ControlModel:
         # Initialize metric tensor and normalization factor to None (to be computed in self.solve_problem())
         self._dia_list: np.ndarray | None = None
         self._metric_tensor: np.ndarray | None = None
-        self._a_tilde: float | None = None
+        self._a_tilde = None
 
         # Initialize pulse parameters
         self._s: np.ndarray | None = None
@@ -119,6 +124,8 @@ class ControlModel:
     @H_func.setter
     def H_func(self, func: Callable[..., np.ndarray]):
         if self._H_func is None:
+            if not callable(func):
+                raise ValidationError("H_func must be callable.")
             self._H_func = func
         else:
             raise ImmutableConfigurationError("H_func is already set and cannot be changed. If you want to change it,"
@@ -131,9 +138,11 @@ class ControlModel:
     @partial_H_func.setter
     def partial_H_func(self, func: Callable[..., np.ndarray]):
         if self._partial_H_func is None:
+            if not callable(func):
+                raise ValidationError("partial_H_func must be callable.")
             self._partial_H_func = func
             self._flag_numerical_partial_H = False  # Update the numerical partial flag
-            self._flags['eigenproblem_solved'] = False  # Reset the eigenproblem solved flag
+            self._flags["eigenproblem_solved"] = False  # Reset the eigenproblem solved flag
         else:
             raise ImmutableConfigurationError(
                 "partial_H_func is already set and cannot be changed. If you want to change it,"
@@ -147,8 +156,10 @@ class ControlModel:
     def control_name(self, name: str | None):
         if name is None:  # Keep the previous value
             return
-        if not isinstance(name, str):
-            raise InvalidControlParameterError("Control name must be a string.")
+        if not isinstance(name, str) or not name.strip():
+            raise InvalidControlParameterError("Control name must be a non-empty string.")
+        if name in self._parameters:
+            raise InvalidControlParameterError(f"Control name {name!r} collides with a stored Hamiltonian parameter.")
         if name == self._control_name:  # Keep the previous value
             return
         self._control_name = name
@@ -163,16 +174,15 @@ class ControlModel:
         if value is None:  # Keep the previous value
             return
 
-        if not isinstance(value, (int, float)):
+        if not isinstance(value, (int, float, np.integer, np.floating)) or isinstance(value, bool):
             raise InvalidControlParameterError("Pulse initial value must be a number.")
-
-        if self._pulse_final is not None:
-            if np.isclose(value, self._pulse_final):
-                raise ValueError("The initial and final control values must be different.")
-
-        if value == self._pulse_initial:  # Keep the previous value
+        value = float(value)
+        if not np.isfinite(value):
+            raise InvalidControlParameterError("Pulse initial value must be finite.")
+        if value == self._pulse_initial:
             return
-
+        if self._pulse_final is not None and value == self._pulse_final:
+            raise InvalidControlParameterError("Pulse initial and final values must be different.")
         self._pulse_initial = value
         self._flags[
             'eigenproblem_solved'] = False  # Reset the eigenproblem solved flag if the pulse initial value changes
@@ -185,16 +195,15 @@ class ControlModel:
     def pulse_final(self, value: float | None):
         if value is None:  # Keep the previous value
             return
-
-        if not isinstance(value, (int, float)):
+        if not isinstance(value, (int, float, np.integer, np.floating)) or isinstance(value, bool):
             raise InvalidControlParameterError("Pulse final value must be a number.")
-
-        if self._pulse_initial is not None:
-            if np.isclose(value, self._pulse_initial):
-                raise ValueError("The initial and final control values must be different.")
-
-        if value == self._pulse_final:  # Keep the previous value
+        value = float(value)
+        if not np.isfinite(value):
+            raise InvalidControlParameterError("Pulse final value must be finite.")
+        if value == self._pulse_final:
             return
+        if self._pulse_initial is not None and value == self._pulse_initial:
+            raise InvalidControlParameterError("Pulse initial and final values must be different.")
         self._pulse_final = value
         self._flags[
             'eigenproblem_solved'] = False  # Reset the eigenproblem solved flag if the pulse final value changes
@@ -210,11 +219,10 @@ class ControlModel:
 
         if not isinstance(value, (int, np.integer)) or isinstance(value, bool):
             raise InvalidControlParameterError("Initial state index must be an integer.")
-
+        value = int(value)
         if value < 0:
-            raise InvalidControlParameterError("Initial state index must be positive.")
-
-        if value == self._initial_state:  # Keep the previous value
+            raise InvalidControlParameterError("Initial state index must be non-negative.")
+        if value == self._initial_state:
             return
 
         self._initial_state = value
@@ -240,11 +248,10 @@ class ControlModel:
 
         if not isinstance(value, (int, np.integer)) or isinstance(value, bool):
             raise InvalidControlParameterError("Final state index must be an integer.")
-
+        value = int(value)
         if value < 0:
-            raise InvalidControlParameterError("Final state index must be positive.")
-
-        if value == self._final_state:  # Keep the previous value
+            raise InvalidControlParameterError("Final state index must be non-negative.")
+        if value == self._final_state:
             return
 
         self._final_state = value
@@ -263,15 +270,16 @@ class ControlModel:
     def alpha(self, value: float | None):
         if value is None:  # Keep the previous value
             return
-
-        if not isinstance(value, (int, float)):
+        if not isinstance(value, (int, float, np.integer, np.floating)) or isinstance(value, bool):
             raise InvalidControlParameterError("Alpha must be a number.")
-
-        if value == self._alpha:  # Keep the previous value
+        value = float(value)
+        if not np.isfinite(value) or value < 0:
+            raise InvalidControlParameterError("Alpha must be a finite non-negative number.")
+        if value == self._alpha:
             return
 
         self._alpha = value
-        self._flags['metric_computed'] = False  # Reset the metric computed flag if alpha changes
+        self._flags["metric_computed"] = False
 
     @property
     def beta(self) -> float:
@@ -281,11 +289,12 @@ class ControlModel:
     def beta(self, value: float | None):
         if value is None:  # Keep the previous value
             return
-
-        if not isinstance(value, (int, float)):
+        if not isinstance(value, (int, float, np.integer, np.floating)) or isinstance(value, bool):
             raise InvalidControlParameterError("Beta must be a number.")
-
-        if value == self._beta:  # Keep the previous value
+        value = float(value)
+        if not np.isfinite(value) or value < 0:
+            raise InvalidControlParameterError("Beta must be a finite non-negative number.")
+        if value == self._beta:
             return
 
         self._beta = value
@@ -299,11 +308,12 @@ class ControlModel:
     def dia_alpha(self, value: float | None):
         if value is None:  # Keep the previous value
             return
-
-        if not isinstance(value, (int, float)):
+        if not isinstance(value, (int, float, np.integer, np.floating)) or isinstance(value, bool):
             raise InvalidControlParameterError("Diabatic alpha must be a number.")
-
-        if value == self._dia_alpha:  # Keep the previous value
+        value = float(value)
+        if not np.isfinite(value) or value < 0:
+            raise InvalidControlParameterError("Diabatic alpha must be a finite non-negative number.")
+        if value == self._dia_alpha:
             return
 
         self._dia_alpha = value
@@ -317,11 +327,12 @@ class ControlModel:
     def dia_beta(self, value: float | None):
         if value is None:  # Keep the previous value
             return
-
-        if not isinstance(value, (int, float)):
+        if not isinstance(value, (int, float, np.integer, np.floating)) or isinstance(value, bool):
             raise InvalidControlParameterError("Diabatic beta must be a number.")
-
-        if value == self._dia_beta:  # Keep the previous value
+        value = float(value)
+        if not np.isfinite(value) or value < 0:
+            raise InvalidControlParameterError("Diabatic beta must be a finite non-negative number.")
+        if value == self._dia_beta:
             return
 
         self._dia_beta = value
@@ -335,15 +346,10 @@ class ControlModel:
     def num_steps(self, value: int | None):
         if value is None:  # Keep the previous value
             return
-
-        if value == self._num_steps:  # Keep the previous value
-            return
-
-        if not isinstance(value, int) or value < 3:
-            raise InvalidControlParameterError(
-                "Number of steps must be an integer >= 3 to support pulse interpolation.")
-
-        if value == self._num_steps:  # Keep the previous value
+        if not isinstance(value, (int, np.integer)) or isinstance(value, bool) or int(value) < 3:
+            raise InvalidControlParameterError("Number of steps must be an integer >= 3 to support interpolation.")
+        value = int(value)
+        if value == self._num_steps:
             return
 
         self._num_steps = value
@@ -353,15 +359,17 @@ class ControlModel:
     def control_sol(self) -> np.ndarray:
         if not self._flags['ode_solved']:
             self.solve_problem()  # Attempt to solve the ODE if not already solved
-        assert self._control_sol is not None
-        return self._control_sol
+        if self._control_sol is None:
+            raise SolverError("The control solution is unavailable after solving.")
+        return self._control_sol.copy()
 
     @property
     def pulse(self) -> np.ndarray:
         all_flags_check = self._flags.all()
         if not all_flags_check:
             self.solve_problem()  # Attempt to solve the pulse if not already solved
-        assert self._pulse is not None
+        if self._pulse is None:
+            raise SolverError("The pulse is unavailable after solving.")
         return cast(np.ndarray, self._pulse)
 
     @property
@@ -370,8 +378,9 @@ class ControlModel:
         if not self._flags['eigenproblem_solved']:
             self._check_eigensystem_parameters()
             self._solve_eigenproblem()
-        assert self._energies is not None
-        return self._energies
+        if self._energies is None:
+            raise SolverError("Eigenenergies are unavailable after eigensystem solution.")
+        return self._energies.copy()
 
     @property
     def control_pulse(self) -> np.ndarray:
@@ -379,8 +388,9 @@ class ControlModel:
         if not self._flags['eigenproblem_solved']:
             self._check_eigensystem_parameters()
             self._solve_eigenproblem()
-        assert self._control_pulse is not None
-        return self._control_pulse
+        if self._control_pulse is None:
+            raise SolverError("Control grid is unavailable after eigensystem solution.")
+        return self._control_pulse.copy()
 
     def set_parameters(self, **parameters):
         """
@@ -419,33 +429,33 @@ class ControlModel:
 
         Parameters
         ----------
-        control_name : Optional[str]
+        control_name : str | None
             The name of the control parameter (e.g., "lambda"). This is used to identify the control parameter in the
-             ControlModel function.
-        pulse_initial : Optional[float]
+             Hamiltonian function.
+        pulse_initial : float | None
             The initial value of the control pulse. This is the value of the control parameter at the beginning of the
              pulse.
-        pulse_final : Optional[float]
+        pulse_final : float | None
             The final value of the control pulse. This is the value of the control parameter at the end of the pulse.
-        initial_state : Optional[int]
+        initial_state : int | None
             The index of the initial state in the energy spectrum. This is used to compute the metric tensor and the
              ODE for the control pulse.
-        final_state : Optional[int]
+        final_state : int | None
             The index of the final state in the energy spectrum. This is used to compute the metric tensor and the ODE
             for the control pulse. If not provided, it will be assumed to be the same as the initial state.
-        alpha : Optional[float]
+        alpha : float | None
             The exponent alpha used in the metric tensor computation. This parameter controls the weighting of the
              energy gaps in the metric tensor.
-        beta : Optional[float]
+        beta : float | None
             The exponent beta used in the metric tensor computation. This parameter controls the weighting of the
             matrix elements in the metric tensor.
-        dia_alpha : Optional[float]
+        dia_alpha : float | None
             The exponent alpha used in the diabatic passage contribution to the metric tensor. This parameter controls
              the weighting of the energy gaps in the diabatic passage contribution to the metric tensor.
-        dia_beta : Optional[float]
+        dia_beta : float | None
             The exponent beta used in the diabatic passage contribution to the metric tensor. This parameter controls
              the weighting of the matrix elements in the diabatic passage contribution to the metric tensor.
-        num_steps : Optional[int]
+        num_steps : int | None
             The number of steps to use in the discretization of the control pulse. This determines the resolution of
             the control pulse and the accuracy of the numerical solution. If omitted and no previous value exists,
             a default of ``2**10 + 1`` is used.
@@ -484,9 +494,9 @@ class ControlModel:
         else:
             self.num_steps = num_steps
 
-    def solve_problem(self, pulse_accuracy: int = 1000, solver: Optional[Callable] = None,
-                      solver_kwargs: Optional[dict] = None, metric_integrator: Optional[Callable] = None,
-                      metric_integrator_kwargs: Optional[dict] = None, ):
+    def solve_problem(self, pulse_accuracy: int = 1000, solver: Callable[..., Any] | None = None,
+                      solver_kwargs: dict[str, Any] | None = None, metric_integrator: Callable[..., Any] | None = None,
+                      metric_integrator_kwargs: dict[str, Any] | None = None, ):
         """
         Solve the optimization problem to find the optimal control pulse. This method computes the metric tensor based
         on the energies and matrix elements of the ControlModel, and then solves the ODE for the control pulse using the
@@ -498,18 +508,23 @@ class ControlModel:
         pulse_accuracy : int
             The number of points to use in the numerical solution of the ODE for the control pulse. Higher values will
              yield a more accurate solution but will also increase the computational cost.
-        solver : Optional[Callable]
+        solver : Callable[..., Any] | None
             Callable used to integrate the ODE. Defaults to ``scipy.integrate.solve_ivp``.
             Expected signature is solver(fun, t_span, y0, t_eval=..., **kwargs), and the return
             value must expose ``t`` and ``y`` (or be a ``(t, y)`` tuple).
-        solver_kwargs : Optional[dict]
+        solver_kwargs : dict[str, Any] | None
             Additional keyword arguments forwarded to ``solver``.
-        metric_integrator : Optional[Callable]
+        metric_integrator : Callable[..., Any] | None
             Callable used to compute ``a_tilde`` from ``sqrt(metric_tensor)``. Defaults to
             ``scipy.integrate.romb``.
-        metric_integrator_kwargs : Optional[dict]
+        metric_integrator_kwargs : dict[str, Any] | None
             Additional keyword arguments forwarded to ``metric_integrator``.
         """
+        if not isinstance(pulse_accuracy, (int, np.integer)) or isinstance(pulse_accuracy, bool):
+            raise InvalidControlParameterError("pulse_accuracy must be an integer >= 3.")
+        pulse_accuracy = int(pulse_accuracy)
+        if pulse_accuracy < 3:
+            raise InvalidControlParameterError("pulse_accuracy must be an integer >= 3.")
         self._check_control_parameters()
 
         self._configure_integration(solver=solver, solver_kwargs=solver_kwargs, metric_integrator=metric_integrator,
@@ -520,40 +535,35 @@ class ControlModel:
 
         self._solve_ode(pulse_accuracy)
 
-    def _configure_integration(self, solver: Optional[Callable], solver_kwargs: Optional[dict],
-                               metric_integrator: Optional[Callable], metric_integrator_kwargs: Optional[dict], ):
-        selected_solver = solve_ivp if solver is None else solver
-        selected_metric_integrator = romb if metric_integrator is None else metric_integrator
-        if solver_kwargs is None:
-            selected_solver_kwargs = {}
-        elif isinstance(solver_kwargs, dict):
-            selected_solver_kwargs = dict(solver_kwargs)
-        else:
+    def _configure_integration(self, solver: Callable[..., Any] | None, solver_kwargs: dict[str, Any] | None,
+                               metric_integrator: Callable[..., Any] | None,
+                               metric_integrator_kwargs: dict[str, Any] | None, ) -> None:
+        if solver_kwargs is not None and not isinstance(solver_kwargs, dict):
             raise ValidationError("solver_kwargs must be a dictionary.")
-
-        if metric_integrator_kwargs is None:
-            selected_metric_integrator_kwargs = {}
-        elif isinstance(metric_integrator_kwargs, dict):
-            selected_metric_integrator_kwargs = dict(metric_integrator_kwargs)
-        else:
+        if metric_integrator_kwargs is not None and not isinstance(metric_integrator_kwargs, dict):
             raise ValidationError("metric_integrator_kwargs must be a dictionary.")
-
+        selected_solver = self._solver if solver is None else solver
+        selected_metric_integrator = self._metric_integrator if metric_integrator is None else metric_integrator
+        selected_solver_kwargs = self._solver_kwargs if solver_kwargs is None else dict(solver_kwargs)
+        selected_metric_kwargs = (
+            self._metric_integrator_kwargs if metric_integrator_kwargs is None else dict(metric_integrator_kwargs))
         if not callable(selected_solver):
             raise ValidationError("solver must be a callable integration function.")
 
         if not callable(selected_metric_integrator):
             raise ValidationError("metric_integrator must be a callable integration function.")
 
-        if (
-                selected_metric_integrator is not self._metric_integrator or selected_metric_integrator_kwargs != self._metric_integrator_kwargs):  # noqa: E501
-            self._metric_integrator = selected_metric_integrator
-            self._metric_integrator_kwargs = selected_metric_integrator_kwargs
-            self._flags['metric_computed'] = False
+        integrator_changed = selected_metric_integrator is not self._metric_integrator
+        kwargs_changed = selected_metric_kwargs != self._metric_integrator_kwargs
 
+        if integrator_changed or kwargs_changed:
+            self._metric_integrator = selected_metric_integrator
+            self._metric_integrator_kwargs = dict(selected_metric_kwargs)
+            self._flags["metric_computed"] = False
         if selected_solver is not self._solver or selected_solver_kwargs != self._solver_kwargs:
             self._solver = selected_solver
-            self._solver_kwargs = selected_solver_kwargs
-            self._flags['ode_solved'] = False
+            self._solver_kwargs = dict(selected_solver_kwargs)
+            self._flags["ode_solved"] = False
 
     def _solve_dia_list(self):
         """
@@ -561,10 +571,12 @@ class ControlModel:
         solve_problem() to compute the diabatic passage list, which is used in the computation of the metric tensor.
         The results are stored in self._dia_list for later use in computing the metric tensor.
         """
-        if self._flags['dia_list_computed']:
+        if self._flags["dia_list_computed"]:
             return  # If the diabatic passage list is already computed, skip the computation
 
         dim = self.eigenenergies.shape[1]  # Get the dimension of the ControlModel from the energies array
+        if self.initial_state is None or self.final_state is None:
+            raise MissingControlParameterError("initial_state and final_state are required for diabatic passages.")
         self._dia_list = build_diab(initial_state=self.initial_state, final_state=self.final_state, dim=dim)
         self._flags['dia_list_computed'] = True  # Mark the diabatic passage list as computed to avoid recomputation
 
@@ -583,15 +595,24 @@ class ControlModel:
         pulse_initial = self.pulse_initial
         pulse_final = self.pulse_final
         num_steps = self.num_steps
-        assert control_name is not None
-
-        control_pulse = np.linspace(pulse_initial, pulse_final, num=num_steps)
-        self._control_pulse = control_pulse
-
-        full_hamiltonian = np.array([self.H_func(**{control_name: lam, **self._parameters}) for lam in control_pulse])
-
-        self._energies, eigenvectors = np.linalg.eigh(full_hamiltonian)
-
+        if pulse_initial is None or pulse_final is None or num_steps is None:
+            raise MissingControlParameterError("The eigensystem control range is incomplete.")
+        self._hamiltonian_dimension = None
+        self._control_pulse = np.linspace(pulse_initial, pulse_final, num=num_steps, dtype=float)
+        full_hamiltonian = np.stack([self.evaluate_hamiltonian(value) for value in self._control_pulse])
+        dimension = full_hamiltonian.shape[1]
+        for label, index in (("initial_state", self.initial_state), ("final_state", self.final_state)):
+            if index is not None and index >= dimension:
+                raise InvalidControlParameterError(
+                    f"{label}={index} is out of range for a {dimension}-dimensional Hamiltonian.")
+        try:
+            energies, eigenvectors = np.linalg.eigh(full_hamiltonian)
+        except np.linalg.LinAlgError as exc:
+            raise SolverError("Hamiltonian eigendecomposition failed.") from exc
+        energies = np.asarray(energies, dtype=float)
+        if not np.all(np.isfinite(energies)):
+            raise SolverError("Hamiltonian eigendecomposition produced non-finite eigenenergies.")
+        self._energies = energies
         if self._flag_numerical_partial_H:
             # Compute the numerical partial derivative of H with respect to the control parameter
             full_partial_H = self._compute_numerical_partial_H()
@@ -599,12 +620,15 @@ class ControlModel:
         else:
             # Use the provided analytical partial derivative function
             full_partial_H = np.array(
-                [self.partial_H_func(**{control_name: lam, **self._parameters}) for lam in control_pulse])
+                [self.partial_H_func(**{control_name: lam, **self._parameters}) for lam in self._control_pulse])
 
-        self._matrix_elements = np.abs(
+        matrix_elements = np.abs(
             np.einsum('...ij,...jk,...kl->...il', eigenvectors.conj().transpose(0, 2, 1), full_partial_H, eigenvectors))
 
-        self._flags['eigenproblem_solved'] = True  # Mark the eigenproblem as solved to avoid recomputation
+        if not np.all(np.isfinite(matrix_elements)):
+            raise SolverError("Hamiltonian derivative matrix elements contain non-finite values.")
+        self._matrix_elements = matrix_elements
+        self._flags["eigenproblem_solved"] = True  # Mark the eigenproblem as solved to avoid recomputation
 
     def _metric_ratio(self, numerator: np.ndarray, denominator: np.ndarray, alpha: float, beta: float,
                       transition: tuple[int, int], ) -> np.ndarray:
@@ -635,11 +659,14 @@ class ControlModel:
         if self._metric_tensor is None or self._control_pulse is None:
             raise MetricComputationError("Metric tensor was not produced.")
         metric = np.asarray(self._metric_tensor, dtype=float)
+        if metric.ndim != 1 or metric.shape != self._control_pulse.shape:
+            raise MetricComputationError(
+                f"Metric tensor must have shape {self._control_pulse.shape}; received {metric.shape}.")
         if not np.all(np.isfinite(metric)):
             raise MetricComputationError("Metric tensor contains NaN or infinite values.")
 
         scale = max(1.0, float(np.max(np.abs(metric))))
-        tolerance = 1e-12 * scale
+        tolerance = self._SINGULARITY_RTOL * scale
         if np.any(metric < -tolerance):
             raise MetricComputationError("Metric tensor contains negative values.")
         metric = np.maximum(metric, 0.0)
@@ -662,15 +689,22 @@ class ControlModel:
                     "or pass a different metric_integrator to solve_problem(...).")
 
         try:
-            self._a_tilde = float(self._metric_integrator(metric_values, dx=dx, **self._metric_integrator_kwargs))
+            result = self._metric_integrator(metric_values, dx=dx, **self._metric_integrator_kwargs)
         except TypeError as exc:
             raise ValidationError(
                 "Invalid metric_integrator call: ensure it accepts arguments like (values, dx=..., **kwargs).") from exc
+        try:
+            self._a_tilde = float(result)
+        except (TypeError, ValueError) as exc:
+            raise MetricComputationError("Metric integrator must return one finite real scalar.") from exc
+        if not np.isfinite(self._a_tilde) or self._a_tilde <= 0:
+            raise MetricComputationError("Metric normalization must be finite and strictly positive.")
+        self._flags["metric_computed"] = True
 
         self._flags['metric_computed'] = True  # Mark the metric as computed to avoid recomputation
 
     def _compute_G_diabatic(self):
-        num, dim = self._energies.shape
+        num, dim = np.shape(self._energies)
         metric = np.zeros(num, dtype=float)
         alpha, beta = self.alpha, self.beta
 
@@ -718,7 +752,7 @@ class ControlModel:
 
         Parameters
         ----------
-        order
+        order: int
             Order of the finite-difference formula.
 
         Returns
@@ -807,57 +841,102 @@ class ControlModel:
 
         return np.moveaxis(dH_dx, -1, 0)
 
-    def _solve_ode(self, pulse_accuracy: int):
-        """
-        Solve the ODE for the control pulse using the computed metric tensor and the normalization factor a_tilde.
-        """
-
+    def _solve_ode(self, pulse_accuracy: int) -> None:
+        """Solve the normalized geodesic ODE and validate the solver result."""
         if self._previous_pulse_accuracy != pulse_accuracy:
-            self._flags['ode_solved'] = False  # Reset the ODE solved flag if the pulse accuracy changes
-
-        if self._flags['ode_solved']:
-            return  # If the ODE is already solved, skip the computation
-
+            self._flags["ode_solved"] = False
+        if self._flags["ode_solved"]:
+            return
         if self._control_pulse is None or self._metric_tensor is None or self._a_tilde is None:
             raise SolverError("ODE cannot be solved before the control pulse and metric tensor are available.")
 
-        sig = np.sign(self._control_pulse[1] - self._control_pulse[0])
+        factor = self._a_tilde / np.sqrt(self._metric_tensor)
+        if not np.all(np.isfinite(factor)) or np.any(factor <= 0):
+            raise MetricComputationError("ODE speed factor is non-finite or non-positive.")
 
-        factor_interpolation = interp1d(self._control_pulse, self._a_tilde / np.sqrt(self._metric_tensor),
-                                        kind='quadratic', fill_value="extrapolate")
+        order = np.argsort(self._control_pulse)
+        interpolation = PchipInterpolator(self._control_pulse[order], factor[order], extrapolate=False, )
 
-        def model(_, y):
-            return sig * factor_interpolation(y)
+        direction = float(np.sign(self._control_pulse[-1] - self._control_pulse[0]))
+        lower = float(np.min(self._control_pulse))
+        upper = float(np.max(self._control_pulse))
 
-        s = np.linspace(0, 1, pulse_accuracy)
+        def model(_: float, y: np.ndarray) -> np.ndarray:
+            clipped = np.clip(y, lower, upper)
+            return np.asarray(direction * interpolation(clipped), dtype=float)
+
+        s = np.linspace(0.0, 1.0, pulse_accuracy)
         kwargs = dict(self._solver_kwargs)
         if self._solver is solve_ivp:
-            kwargs = {'dense_output': True, 'method': 'RK45', 'atol': 1e-8, 'rtol': 1e-6, **kwargs}
+            reserved = {"dense_output", "events", "t_eval"}.intersection(kwargs)
+            if reserved:
+                names = ", ".join(sorted(reserved))
+                raise ValidationError(f"solver_kwargs must not override internally managed option(s): {names}.")
+            kwargs = {"method": "RK45", "atol": 1e-8, "rtol": 1e-6, **kwargs}
 
-        try:
-            sol = self._solver(model, [0, 1], [self._control_pulse[0]], t_eval=s, **kwargs)
-        except TypeError as exc:
-            raise ValidationError(
-                "Invalid solver call: ensure solver accepts (fun, t_span, y0, t_eval=..., **kwargs).") from exc
+            target = float(self._control_pulse[-1])
 
-        if hasattr(sol, "success") and not sol.success:
-            raise SolverError(getattr(sol, "message", "ODE solver failed."))
+            def endpoint_event(_: float, y: np.ndarray) -> float:
+                return float(y[0] - target)
 
-        if isinstance(sol, tuple):
-            if len(sol) != 2:
-                raise SolverError("Solver tuple output must be a (t, y) pair.")
-            t_arr = sol[0]
-            y_arr = sol[1]
-        elif hasattr(sol, "t") and hasattr(sol, "y"):
-            t_arr, y_arr = sol.t, sol.y
+            endpoint_event.terminal = True
+            endpoint_event.direction = direction
+            try:
+                sol = solve_ivp(model, [0.0, 10.0], [self._control_pulse[0]], dense_output=True, events=endpoint_event,
+                                **kwargs, )
+            except TypeError as exc:
+                raise ValidationError("Invalid solve_ivp keyword arguments.") from exc
+            if not sol.success:
+                raise SolverError(str(sol.message))
+            if not sol.t_events or sol.t_events[0].size == 0 or sol.sol is None:
+                raise SolverError("ODE solution did not reach the requested final control value.")
+            endpoint_time = float(sol.t_events[0][0])
+            if not np.isfinite(endpoint_time) or endpoint_time <= 0:
+                raise SolverError("ODE endpoint time must be finite and strictly positive.")
+            t = s
+            y = np.asarray(sol.sol(s * endpoint_time), dtype=float)
         else:
-            raise SolverError("Solver output must expose 't' and 'y', or return a (t, y) tuple.")
-
-        y_arr = np.asarray(y_arr)
-        self._s = np.asarray(t_arr, dtype=float)
-        self._control_sol = np.asarray(y_arr[0] if y_arr.ndim == 2 else y_arr, dtype=float)
+            try:
+                sol = self._solver(model, [0.0, 1.0], [self._control_pulse[0]], t_eval=s, **kwargs)
+            except TypeError as exc:
+                raise ValidationError(
+                    "Invalid solver call: ensure solver accepts (fun, t_span, y0, t_eval=..., **kwargs).") from exc
+            if hasattr(sol, "success") and not sol.success:
+                raise SolverError(str(getattr(sol, "message", "ODE solver failed.")))
+            if isinstance(sol, tuple):
+                if len(sol) != 2:
+                    raise SolverError("Solver tuple output must be a (t, y) pair.")
+                t_arr, y_arr = sol
+            elif hasattr(sol, "t") and hasattr(sol, "y"):
+                t_arr, y_arr = sol.t, sol.y
+            else:
+                raise SolverError("Solver output must expose 't' and 'y', or return a (t, y) tuple.")
+            t = np.asarray(t_arr, dtype=float)
+            y = np.asarray(y_arr, dtype=float)
+        if t.ndim != 1 or t.size != pulse_accuracy:
+            raise SolverError(f"Solver time grid must be one-dimensional with {pulse_accuracy} samples.")
+        if y.ndim == 2:
+            if y.shape == (1, pulse_accuracy):
+                control = y[0]
+            elif y.shape == (pulse_accuracy, 1):
+                control = y[:, 0]
+            else:
+                raise SolverError("Solver state array must have shape (1, n) or (n, 1).")
+        elif y.ndim == 1 and y.size == pulse_accuracy:
+            control = y
+        else:
+            raise SolverError("Solver state array has an invalid shape.")
+        if not np.all(np.isfinite(t)) or not np.all(np.isfinite(control)):
+            raise SolverError("Solver output contains NaN or infinite values.")
+        if np.any(np.diff(t) <= 0) or not np.isclose(t[0], 0.0) or not np.isclose(t[-1], 1.0):
+            raise SolverError("Solver time grid must be strictly increasing and span [0, 1].")
+        if self._solver is solve_ivp:
+            control[0] = self._control_pulse[0]
+            control[-1] = self._control_pulse[-1]
+        self._s = t.copy()
+        self._control_sol = control.copy()
         self._previous_pulse_accuracy = pulse_accuracy
-        self._flags['ode_solved'] = True
+        self._flags["ode_solved"] = True
 
     def _check_eigensystem_parameters(self):
         """Validate control settings needed to compute and compute the eigenvalues."""
@@ -878,7 +957,7 @@ class ControlModel:
                                                "Please set them using set_control(...).")
 
     def plot_eigenvalues(self, fig=None, ax=None, legend: bool = True, legend_kwargs: Optional[dict] = None,
-                         xlabel: Optional[str] = None, ylabel: Optional[str] = None, title: Optional[str] = None,
+                         xlabel: Optional[str] = None, ylabel: str | None = None, title: Optional[str] = None,
                          **plot_kwargs):
         """
         Plot ControlModel eigenvalues as a function of the control parameter.
@@ -889,13 +968,13 @@ class ControlModel:
             Optional matplotlib figure/axis. If not provided, they are created.
         legend : bool
             Whether to draw a legend.
-        legend_kwargs : Optional[dict]
+        legend_kwargs : dict | None
             Extra kwargs forwarded to ``ax.legend``.
-        xlabel : Optional[str]
+        xlabel : str | None
             Label for the x-axis. Defaults to ``control_name`` when not provided.
-        ylabel : Optional[str]
+        ylabel : str | None
             Label for the y-axis. Defaults to ``"Energy"`` when not provided.
-        title : Optional[str]
+        title : str | None
             Plot title. Defaults to ``"ControlModel Eigenvalues"`` when not provided.
         **plot_kwargs
             Extra kwargs forwarded to ``ax.plot`` for each energy branch.
@@ -924,7 +1003,7 @@ class ControlModel:
 
         ax.set_xlabel(control_name if xlabel is None else xlabel)
         ax.set_ylabel("Energy" if ylabel is None else ylabel)
-        ax.set_title("ControlModel Eigenvalues" if title is None else title)
+        ax.set_title("Hamiltonian eigenenergies" if title is None else title)
 
         if legend:
             ax.legend(**(legend_kwargs or {}))
@@ -946,13 +1025,13 @@ class ControlModel:
             Optional matplotlib figure/axis. If not provided, they are created.
         legend : bool
             Whether to draw a legend.
-        legend_kwargs : Optional[dict]
+        legend_kwargs : dict | None
             Extra kwargs forwarded to ``ax.legend``.
-        xlabel : Optional[str]
+        xlabel : str | None
             Label for the x-axis. Defaults to ``control_name`` when not provided.
-        ylabel : Optional[str]
+        ylabel : str | None
             Label for the y-axis. Defaults to ``"G tensor"`` when not provided.
-        title : Optional[str]
+        title : str | None
             Plot title. Defaults to ``"G tensor"`` when not provided.
         **plot_kwargs
             Extra kwargs forwarded to ``ax.plot``.
@@ -1001,11 +1080,11 @@ class ControlModel:
         ----------
         duration : float
             The total duration of the control pulse.
-        method : Optional[str]
+        method : str | None
             Name of the method to use for the pulse synthesis
-        pulse_args : Optional[tuple]
+        pulse_args : tuple | None
             Positional arguments for the pulse synthesis (e.g., duration, filter parameters).
-        pulse_kwargs : Optional[dict]
+        pulse_kwargs : dict | None
             Keyword arguments for the pulse synthesis (e.g., duration, filter parameters).
 
         Returns
@@ -1013,12 +1092,12 @@ class ControlModel:
         PulseControl
              An instance of the PulseControl class representing the synthesized control pulse.
         """
-        self.solve_problem()
+        if not self._flags["ode_solved"]:
+            self.solve_problem()
         if self._control_sol is None:
             raise SolverError("Cannot synthesize a pulse before the control solution is available.")
-        pulse = PulseControl(self._control_sol, duration, method, pulse_args, pulse_kwargs)
-        self._pulse = pulse
-        return pulse()
+        self._pulse = PulseControl(self._control_sol, duration, method, pulse_args, pulse_kwargs)
+        return self._pulse()
 
     def _check_control_parameters(self):
         """
@@ -1073,9 +1152,9 @@ class ControlModel:
                                ")")
 
         summary_lines = ["------------------ ControlModel Control Summary ------------------",
-                         f"ControlModel: {'✅ set' if self.H_func is not None else '❌ not set'}",
-                         f"Partial ControlModel: {'✅ set' if self.partial_H_func is not None else '❌ not set'}",
-                         f"ControlModel parameters: {hamiltonian_params}",
+                         f"Hamiltonian: {'✅ set' if self.H_func is not None else '❌ not set'}",
+                         f"Partial Hamiltonian: {'✅ set' if self.partial_H_func is not None else '❌ not set'}",
+                         f"Hamiltonian parameters: {hamiltonian_params}",
                          f"Control name → {self.control_name if self.control_name is not None else '❌ not set'}",
                          f"Pulse initial → {self.pulse_initial if self.pulse_initial is not None else '❌ not set'}",
                          f"Pulse final → {self.pulse_final if self.pulse_final is not None else '❌ not set'}",
@@ -1089,17 +1168,17 @@ class ControlModel:
                          "---------------------------------------------------------------", ]
         return "\n".join(summary_lines)
 
-    def print_summary(self):
+    def print_summary(self) -> None:
         """
         Print a summary of the current control parameters and settings. This method provides a clear overview of the
         control parameters, their values, and any relevant settings for the optimization problem.
         """
         print(self._generate_summary())
 
-    def __str__(self):
+    def __str__(self) -> str:
         return (f"ControlModel(control_name={self.control_name}, pulse_initial={self.pulse_initial}, "
                 f"pulse_final={self.pulse_final}, initial_state={self.initial_state}, alpha={self.alpha}, "
                 f"beta={self.beta}, num_steps={self.num_steps})")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return self._generate_summary()

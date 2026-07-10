@@ -13,7 +13,7 @@ from geodesiq import ControlModel
 
 
 # ---------------------------------------------------------------------------
-# Internal Hamiltonian builders
+# Internal ControlModel builders
 # ---------------------------------------------------------------------------
 
 def _lz_H_dH(coupling: float = 0.5):
@@ -21,7 +21,7 @@ def _lz_H_dH(coupling: float = 0.5):
     D = np.array([[1.0, 0.0], [0.0, -1.0]])
     C = np.array([[0.0, coupling], [coupling, 0.0]])
 
-    def H(lam: float) -> np.ndarray:  # noqa: E306
+    def H(lam: float) -> np.ndarray:
         return lam * D + C
 
     def dH(lam: float) -> np.ndarray:
@@ -66,7 +66,7 @@ def _chain_H_dH(N: int, coupling: float = 0.5, seed: int = 42):
     # Capture in closures (D and C are immutable after this point)
     _D, _C = D, C
 
-    def H(lam: float) -> np.ndarray:  # noqa: E306
+    def H(lam: float) -> np.ndarray:
         return lam * _D + _C
 
     def dH(lam: float) -> np.ndarray:
@@ -106,7 +106,7 @@ def make_ham(dim: int = 2, num_steps: int = 2 ** 8 + 1, analytical_partial: bool
     alpha, beta
         Metric tensor exponents.
     coupling
-        Off-diagonal coupling strength passed to the Hamiltonian.
+        Off-diagonal coupling strength passed to the ControlModel model.
     seed
         RNG seed for the chain Hamiltonian's random noise term.
     """

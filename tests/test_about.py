@@ -10,17 +10,9 @@ def test_about_prints_expected_sections(capsys):
     about()
     captured = capsys.readouterr()
 
-    expected_labels = [
-        "geodesiq: geometric optimal control",
-        "geodesiq Version:",
-        "Numpy Version:",
-        "Scipy Version:",
-        "QuTiP Version:",
-        "Matplotlib Version:",
-        "Python Version:",
-        "Number of CPUs:",
-        "Platform Info:",
-    ]
+    expected_labels = ["geodesiq: geometric optimal control", "geodesiq Version:", "Numpy Version:", "Scipy Version:",
+                       "QuTiP Version:", "Matplotlib Version:", "Python Version:", "Number of CPUs:",
+                       "Platform Info:", ]
 
     for label in expected_labels:
         assert label in captured.out

@@ -1,9 +1,5 @@
-from geodesiq.warnings import (
-    ExperimentalFeatureWarning,
-    GeodesiQWarning,
-    NumericalStabilityWarning,
-    PerformanceWarning,
-)
+from geodesiq.warnings import (ExperimentalFeatureWarning, GeodesiQWarning, NumericalStabilityWarning,
+                               PerformanceWarning, )
 
 
 def test_warning_hierarchy():
@@ -20,4 +16,3 @@ def test_base_warning_without_message():
 def test_warning_message_has_prefix():
     warn = PerformanceWarning("high cost expected")
     assert str(warn) == "[geodesiq] high cost expected"
-

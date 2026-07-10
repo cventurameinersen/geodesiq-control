@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import importlib.util
 from datetime import date
 from pathlib import Path
@@ -18,10 +16,8 @@ def project_files(tmp_path: Path, unreleased: str = "### Fixed\n\n- Corrected a 
     meta = tmp_path / "_meta.py"
     changelog = tmp_path / "CHANGELOG.md"
     meta.write_text('__version__ = "1.2.3"\n', encoding="utf-8")
-    changelog.write_text(
-        f"# Changelog\n\n## [Unreleased]\n\n{unreleased}\n## [1.2.3] - 2026-01-01\n\n- Previous.\n",
-        encoding="utf-8",
-    )
+    changelog.write_text(f"# Changelog\n\n## [Unreleased]\n\n{unreleased}\n## [1.2.3] - 2026-01-01\n\n- Previous.\n",
+                         encoding="utf-8", )
     return meta, changelog
 
 

@@ -7,6 +7,7 @@ import qutip as qt
 from geodesiq.dynamics import Dynamics
 from geodesiq.exceptions import ValidationError
 
+
 # ------------------------------------------------------------
 # Dummy ControlModel() object as pytest.fixture
 # ------------------------------------------------------------
