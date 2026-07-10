@@ -75,8 +75,17 @@ def test_fourier_spectrum_with_linear_ramp(sample_pulse_data):
     pulse, duration = sample_pulse_data
     pc = PulseControl(pulse, duration)
 
-    frequencies, magnitude = pc.fourier_spectrum()
+    frequencies, times, magnitude = pc.fourier_spectrum(window_len=50)
     assert np.all(frequencies >= 0)
+
+
+def test_fourier_spectrum_small_size(sample_pulse_data):
+    """Verify that an error is raised if the length of the pulse is smaller than the window length."""
+    pulse, duration = sample_pulse_data
+    pc = PulseControl(pulse, duration)
+
+    with pytest.raises(ValidationError, match="window_len must be smaller"):
+        pc.fourier_spectrum(window_len=len(pc._pulse_times) * 2)
 
 
 # ------------------------------------------------------------
@@ -89,23 +98,41 @@ def test_plot_pulse_without_showing(default_pulse):
 
     assert isinstance(fig, Figure)
     assert isinstance(ax, Axes)
-    assert ax.get_xlabel() == 'Time $t$'
+    assert ax.get_xlabel() == "Time $t$"
+
+
+def test_plot_pulse_with_show_invokes_matplotlib_show(default_pulse, monkeypatch):
+    """The show=True branch should call matplotlib.pyplot.show()."""
+    import matplotlib.pyplot as plt
+
+    called = {"count": 0}
+
+    def fake_show():
+        called["count"] += 1
+
+    monkeypatch.setattr(plt, "show", fake_show)
+
+    fig, ax = default_pulse.plot_pulse(show=True)
+
+    assert called["count"] == 1
+    assert isinstance(fig, Figure)
+    assert isinstance(ax, Axes)
 
 
 # ------------------------------------------------------------
 # Testing export_pulse method
 # ------------------------------------------------------------
 
-def test_export_pulse_as_npy(default_pulse, tmp_path):
-    """Verify .npy file export works seamlessly using a temporary test directory."""
+def test_export_pulse_as_npz(default_pulse, tmp_path):
+    """Verify .npz file export works seamlessly using a temporary test directory."""
 
     test_file_base = os.path.join(tmp_path, "test_pulse")
-    default_pulse.export_pulse(filename=test_file_base, file_extension="npy")
-    expected_full_path = test_file_base + ".npy"
+    default_pulse.export_pulse(filename=test_file_base, file_extension="npz")
+    expected_full_path = test_file_base + ".npz"
     assert os.path.exists(expected_full_path)
 
     # Load back data to verify integrity
-    loaded_data = np.load(expected_full_path, allow_pickle=True).item()
+    loaded_data = np.load(expected_full_path)
     np.testing.assert_array_equal(loaded_data["pulse"], default_pulse._pulse)
 
 
@@ -129,11 +156,11 @@ def test_export_pulse_raises_on_existing_file(default_pulse, tmp_path):
     test_file_base = os.path.join(tmp_path, "test_pulse_overwrite")
 
     # First export
-    default_pulse.export_pulse(filename=test_file_base, file_extension="npy")
+    default_pulse.export_pulse(filename=test_file_base, file_extension="npz")
 
     # Second export should raise error
     with pytest.raises(IOErrorGeodesiQ, match="File already exists"):
-        default_pulse.export_pulse(filename=test_file_base, file_extension="npy", overwrite=False)
+        default_pulse.export_pulse(filename=test_file_base, file_extension="npz", overwrite=False)
 
 
 def test_export_pulse_with_overwrite(default_pulse, tmp_path):
@@ -141,11 +168,11 @@ def test_export_pulse_with_overwrite(default_pulse, tmp_path):
     test_file_base = os.path.join(tmp_path, "test_pulse_overwrite2")
 
     # First export
-    default_pulse.export_pulse(filename=test_file_base, file_extension="npy")
-    original_path = test_file_base + ".npy"
+    default_pulse.export_pulse(filename=test_file_base, file_extension="npz")
+    original_path = test_file_base + ".npz"
 
     # Second export with overwrite=True should succeed
-    default_pulse.export_pulse(filename=test_file_base, file_extension="npy", overwrite=True)
+    default_pulse.export_pulse(filename=test_file_base, file_extension="npz", overwrite=True)
     assert os.path.exists(original_path)
 
 
@@ -156,14 +183,14 @@ def test_export_pulse_unsupported_extension(default_pulse, tmp_path):
     test_file_base = os.path.join(tmp_path, "test_pulse_invalid")
 
     with pytest.raises(MissingArgsError, match="Unsupported data_type"):
-        default_pulse.export_pulse(filename=test_file_base, file_extension="csv")
+        default_pulse.export_pulse(filename=test_file_base, file_extension="json")
 
 
 def test_export_pulse_strips_leading_dot(default_pulse, tmp_path):
     """Verify export_pulse correctly handles file extensions with leading dot."""
     test_file_base = os.path.join(tmp_path, "test_pulse_dot")
-    default_pulse.export_pulse(filename=test_file_base, file_extension=".npy")
-    expected_full_path = test_file_base + ".npy"
+    default_pulse.export_pulse(filename=test_file_base, file_extension=".npz")
+    expected_full_path = test_file_base + ".npz"
     assert os.path.exists(expected_full_path)
 
 
