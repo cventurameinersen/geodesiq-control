@@ -277,16 +277,16 @@ class PulseControl:
 
         return fig, ax
 
-    def export_pulse(self, filename: str, file_extension: str = 'npy', overwrite: bool = False):
+    def export_pulse(self, filename: str, file_extension: str = 'npz', overwrite: bool = False):
         """
-        Export (real-time) pulse data to a (npy, txt) file.
+        Export (real-time) pulse data to a (npz, txt, csv) file.
 
         Parameters
         ----------
         filename: str
             Name for the data file saved.
         file_extension: str
-            Data type the pulse should be stored in (i.e. 'txt', 'npy', 'csv'). Default is 'npy'.
+            Data type the pulse should be stored in (i.e. 'txt', 'npz', 'csv'). Default is 'npz'.
         overwrite: bool
             Ensures accidental overwrites.
         """

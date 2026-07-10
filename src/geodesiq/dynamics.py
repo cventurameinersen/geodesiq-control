@@ -1,4 +1,4 @@
-from typing import Any, List, Optional
+from typing import List, Optional
 
 import numpy as np
 import qutip as qt
@@ -9,7 +9,7 @@ from .exceptions import ValidationError
 
 class Dynamics:
 
-    def __init__(self, duration: float, model: ControlModel):
+    def __init__(self, duration: float, model: ControlModel, hbar: float = 1.):
         """
         Initialize the Dynamics object, which depends on an instance of the ControlModel class. This class deals with
         observables due to the time evolution of the pulsed ControlModel.
@@ -20,20 +20,24 @@ class Dynamics:
             Duration of the control pulse (t_f).
         model: ControlModel
             An instance of the ControlModel class containing the control pulse and system parameters.
+        hbar: float
+            Reduced Planck's constant (default is 1).
         """
 
         # Attributes of the ControlModel instance
-        self._H_func: Any = model._H_func
-        self._parameters: dict[str, Any] = dict(model._parameters)
+        self.evaluate_hamiltonian = model.evaluate_hamiltonian
         self._control_pulse: np.ndarray | None = (
             np.asarray(model._control_pulse) if model._control_pulse is not None else None)
         self._control_sol: np.ndarray | None = (
             np.asarray(model._control_sol) if model._control_sol is not None else None)
         self._initial_state: int | None = model._initial_state
         self._final_state: int | None = model._final_state
-        self._control_name: str | None = model._control_name
 
-        if self._control_pulse is None or self._control_sol is None or self._control_name is None:
+        if not isinstance(hbar, float):
+            raise ValidationError("hbar must be a float.")
+        self._hbar: float = hbar
+
+        if self._control_pulse is None or self._control_sol is None:
             raise ValidationError(
                 "Dynamics requires a solved ControlModel with control pulse, control solution and control name set.")
 
@@ -43,13 +47,8 @@ class Dynamics:
         self._duration = duration
         self._pulse_times: np.ndarray = duration * np.linspace(0, 1, len(self._control_sol))
 
-    def _control_kwargs(self, control_value: float) -> dict[str, Any]:
-        control_name = self._control_name
-        assert control_name is not None
-        return {control_name: control_value, **self._parameters}
-
     def _eigenstate(self, control_value: float, state_index: int) -> qt.Qobj:
-        hamiltonian = qt.Qobj(self._H_func(**self._control_kwargs(control_value)))
+        hamiltonian = qt.Qobj(self.evaluate_hamiltonian(control_value))
         _, eigenstates = hamiltonian.eigenstates()
         return eigenstates[state_index]
 
@@ -61,7 +60,7 @@ class Dynamics:
         control_sol: list[float] = np.asarray(self._control_sol, dtype=float).tolist()
         control_val_t = float(np.interp(t, pulse_times, control_sol))
 
-        return qt.Qobj(self._H_func(**self._control_kwargs(control_val_t)))
+        return qt.Qobj(self.evaluate_hamiltonian(control_val_t)) / self._hbar
 
     def time_evolution_operator(self) -> List[qt.Qobj]:
         """

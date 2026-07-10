@@ -253,6 +253,13 @@ class TestSetControl:
         assert configured_ham._flags["eigenproblem_solved"] is True
         assert configured_ham._flags["metric_computed"] is True
 
+    def test_equal_initial_and_final_values(self, bare_ham):
+        """Setting pulse_initial == pulse_final should raise an error."""
+        with pytest.raises(InvalidControlParameterError,
+                           match="pulse_initial and pulse_final values must be different"):
+            bare_ham.set_control(control_name="lam", pulse_initial=1.0, pulse_final=1.0, initial_state=0, alpha=2.0,
+                                 beta=2.0, num_steps=33)
+
 
 # ---------------------------------------------------------------------------
 # _check_control_parameters

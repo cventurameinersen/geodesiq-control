@@ -175,14 +175,14 @@ class ControlModel:
             return
 
         if not isinstance(value, (int, float, np.integer, np.floating)) or isinstance(value, bool):
-            raise InvalidControlParameterError("Pulse initial value must be a number.")
+            raise InvalidControlParameterError("pulse_initial value must be a number.")
         value = float(value)
         if not np.isfinite(value):
-            raise InvalidControlParameterError("Pulse initial value must be finite.")
+            raise InvalidControlParameterError("pulse_initial value must be finite.")
         if value == self._pulse_initial:
             return
         if self._pulse_final is not None and value == self._pulse_final:
-            raise InvalidControlParameterError("Pulse initial and final values must be different.")
+            raise InvalidControlParameterError("pulse_initial and pulse_final values must be different.")
         self._pulse_initial = value
         self._flags[
             'eigenproblem_solved'] = False  # Reset the eigenproblem solved flag if the pulse initial value changes
@@ -196,14 +196,14 @@ class ControlModel:
         if value is None:  # Keep the previous value
             return
         if not isinstance(value, (int, float, np.integer, np.floating)) or isinstance(value, bool):
-            raise InvalidControlParameterError("Pulse final value must be a number.")
+            raise InvalidControlParameterError("pulse_final value must be a number.")
         value = float(value)
         if not np.isfinite(value):
-            raise InvalidControlParameterError("Pulse final value must be finite.")
+            raise InvalidControlParameterError("pulse_final value must be finite.")
         if value == self._pulse_final:
             return
         if self._pulse_initial is not None and value == self._pulse_initial:
-            raise InvalidControlParameterError("Pulse initial and final values must be different.")
+            raise InvalidControlParameterError("pulse_initial and pulse_final values must be different.")
         self._pulse_final = value
         self._flags[
             'eigenproblem_solved'] = False  # Reset the eigenproblem solved flag if the pulse final value changes
@@ -465,13 +465,6 @@ class ControlModel:
         if candidate_name is not None and candidate_name in self._parameters:
             raise InvalidControlParameterError(
                 f"Control name {candidate_name!r} collides with a stored Hamiltonian parameter.")
-        numeric_types = (int, float, np.integer, np.floating)
-        candidate_initial = self.pulse_initial if pulse_initial is None else pulse_initial
-        candidate_final = self.pulse_final if pulse_final is None else pulse_final
-        if (isinstance(candidate_initial, numeric_types) and not isinstance(candidate_initial, bool) and isinstance(
-                candidate_final, numeric_types) and not isinstance(candidate_final, bool) and float(
-            candidate_initial) == float(candidate_final)):
-            raise InvalidControlParameterError("Pulse initial and final values must be different.")
 
         # Update the final endpoint first when needed to avoid transient equality during range changes.
         self.control_name = control_name
@@ -784,7 +777,7 @@ class ControlModel:
         tolerances = {"atol": 1e-10, "rtol": 1e-8, }
 
         # Scalar evaluation to determine the Hamiltonian shape.
-        H_reference = np.asarray(self._H_func(**self._evaluation_kwargs(float(x_grid[0]))), dtype=np.complex128, )
+        H_reference = np.asarray(self.evaluate_hamiltonian(float(x_grid[0])), dtype=np.complex128, )
 
         H_shape = H_reference.shape
         n_elements = H_reference.size
@@ -798,7 +791,7 @@ class ControlModel:
             """
             x = float(x_column[0])
 
-            H = np.asarray(self._H_func(**self._evaluation_kwargs(x)), dtype=np.complex128, )
+            H = np.asarray(self.evaluate_hamiltonian(float(x)), dtype=np.complex128, )
 
             if H.shape != H_shape:
                 raise ValueError("H_func returned inconsistent shapes: "

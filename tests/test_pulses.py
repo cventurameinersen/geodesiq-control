@@ -124,7 +124,7 @@ def test_plot_pulse_with_show_invokes_matplotlib_show(default_pulse, monkeypatch
 # ------------------------------------------------------------
 
 def test_export_pulse_as_npz(default_pulse, tmp_path):
-    """Verify .npy file export works seamlessly using a temporary test directory."""
+    """Verify .npz file export works seamlessly using a temporary test directory."""
 
     test_file_base = os.path.join(tmp_path, "test_pulse")
     default_pulse.export_pulse(filename=test_file_base, file_extension="npz")

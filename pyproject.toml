@@ -10,7 +10,7 @@ readme = "README.md"
 license = "LGPL-2.1-only"
 license-files = ["LICENSE"]
 authors = [
-    { name = "David Fernández-Fernández", email = "david.fernandezf@hotmail.com" },
+    { name = "David Fernández Fernández", email = "david.fernandezf@hotmail.com" },
     { name = "Christian Ventura Meinersen", email = "C.VenturaMeinersen@tudelft.nl" }
 ]
 requires-python = ">=3.10"
@@ -32,7 +32,7 @@ classifiers = [
 ]
 dependencies = [
     "numpy>=1.23",
-    "scipy>=1.14",
+    "scipy>=1.15",
     "qutip>=5.0.4",
 ]
 
@@ -79,7 +79,6 @@ notebooks = [
     "tqdm>=4.68.2",
     "parameterrun>=0.4.1",
     "quspin>=1.0.0",
-    "theme-darcula>=4.0.0",
 ]
 dev = [
     { include-group = "test" },

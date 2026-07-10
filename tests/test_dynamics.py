@@ -4,57 +4,60 @@ import numpy as np
 import pytest
 import qutip as qt
 
+from geodesiq import ControlModel
 from geodesiq.dynamics import Dynamics
 from geodesiq.exceptions import ValidationError
 
 
 # ------------------------------------------------------------
-# Dummy ControlModel() object as pytest.fixture
+# Real ControlModel() fixtures
 # ------------------------------------------------------------
 
-class DummyModel:
-    """A minimal ControlModel object to isolate Dynamics testing."""
-
-    def __init__(self, control_sol=None):
-        # A simple 2-level system ControlModel function: H(x) = x * sigma_x
-        self._H_func = lambda x, **kwargs: x * qt.sigmax().full()
-        self._parameters = {}
-        self._control_pulse = np.array([1.0, 1.0, 1.0])  # Used to select endpoint eigenstates
-        self._control_sol = np.array([1.0, 1.0, 1.0]) if control_sol is None else np.array(control_sol)
-        self._initial_state = 0
-        self._final_state = 1
-        self._control_name = 'x'
+def lz_hamiltonian(lam: float, delta: float = 1.0) -> np.ndarray:
+    """Simple 2-level Landau-Zener Hamiltonian."""
+    return np.array([[lam, delta], [delta, -lam]], dtype=float)
 
 
-@pytest.fixture
-def mock_model():
-    return DummyModel()
+def _build_solved_model() -> ControlModel:
+    model = ControlModel(lz_hamiltonian)
+    model.set_parameters(delta=1.0)
+    model.set_control(control_name="lam", pulse_initial=1.0, pulse_final=3.0, initial_state=0, final_state=1,
+                      alpha=2.0, beta=2.0, dia_alpha=2.0, dia_beta=2.0, num_steps=33, )
+    model.solve_problem(pulse_accuracy=3)
+    return model
 
 
 @pytest.fixture
-def default_dynamics(mock_model):
+def real_model():
+    return _build_solved_model()
+
+
+@pytest.fixture
+def default_dynamics(real_model):
     duration = 2.0
-    return Dynamics(duration=duration, model=cast(Any, mock_model))
+    return Dynamics(duration=duration, model=real_model)
 
 
 @pytest.fixture
 def varying_dynamics():
     duration = 2.0
-    varying_model = DummyModel(control_sol=[0.0, 2.0, 4.0])
-    return Dynamics(duration=duration, model=cast(Any, varying_model))
+    varying_model = _build_solved_model()
+    # Keep interpolation test deterministic independent of ODE solver details.
+    varying_model._control_sol = np.array([0.0, 2.0, 4.0], dtype=float)
+    return Dynamics(duration=duration, model=varying_model)
 
 
 # ------------------------------------------------------------
 # Testing initialization and internal method _get_ham()
 # ------------------------------------------------------------
 
-def test_initialization(mock_model):
+def test_initialization(real_model):
     """Verify attributes are correctly extracted from the ControlModel object."""
     duration = 5.0
-    dyn = Dynamics(duration=duration, model=cast(Any, mock_model))
+    dyn = Dynamics(duration=duration, model=real_model)
 
     assert dyn._duration == 5.0
-    assert len(dyn._pulse_times) == len(mock_model._control_sol)
+    assert len(dyn._pulse_times) == len(real_model._control_sol)
     assert dyn._pulse_times[-1] == 5.0  # Check proper scaling of time array
 
 
@@ -68,17 +71,17 @@ def test_get_ham(default_dynamics):
 def test_get_ham_interpolation(varying_dynamics):
     """ControlModel values should follow linear interpolation of the solved control pulse."""
     H_qobj = varying_dynamics._get_ham(t=0.5)
-    expected = np.array([[0.0, 1.0], [1.0, 0.0]])
+    expected = np.array([[1.0, 1.0], [1.0, -1.0]])
 
     np.testing.assert_allclose(H_qobj.full(), expected)
 
 
-def test_initialization_requires_solved_model(mock_model):
+def test_initialization_requires_solved_model(real_model):
     """Dynamics should reject ControlModel objects missing solved-control fields."""
-    mock_model._control_sol = None
+    real_model._control_sol = None
 
     with pytest.raises(ValidationError, match="requires a solved ControlModel"):
-        Dynamics(duration=1.0, model=cast(Any, mock_model))
+        Dynamics(duration=1.0, model=real_model)
 
 
 # ------------------------------------------------------------
@@ -146,7 +149,7 @@ def test_state_fidelity_qobj_states(default_dynamics):
 
 def test_state_fidelity_invalid_dimensions(default_dynamics):
     """Verify that array dimensional mismatches throw a ValidationError."""
-    # Our dummy ControlModel has dimensions 2x2. Let's pass a 3-level state.
+    # Our ControlModel has dimensions 2x2. Let's pass a 3-level state.
     bad_state = np.array([[1.0], [0.0], [0.0]])
     valid_state = np.array([[1.0], [0.0]])
 
