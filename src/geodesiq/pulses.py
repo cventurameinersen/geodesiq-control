@@ -1,17 +1,20 @@
-from pathlib import Path
-from typing import Any, Optional, Tuple
+from __future__ import annotations
 
-import matplotlib.pyplot as plt
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Optional, Tuple
+
 import numpy as np
 import scipy as sp
-from matplotlib.axes import Axes
-from matplotlib.figure import Figure
 from scipy.interpolate import interp1d
 from scipy.signal import ShortTimeFFT
 from scipy.signal.windows import hann
 
 from ._meta import PACKAGE_NAME
 from .exceptions import IOErrorGeodesiQ, MissingArgsError, ValidationError
+
+if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+    from matplotlib.figure import Figure
 
 
 class PulseControl:
@@ -189,7 +192,7 @@ class PulseControl:
 
         return self._pulse_times, filtered_pulse
 
-    def plot_pulse(self, show: bool = True, **plot_kwargs) -> Tuple[Figure, Axes]:
+    def plot_pulse(self, show: bool = True, **plot_kwargs) -> "Tuple[Figure, Axes]":
         """
         Plot the (real-time) control pulse.
 
@@ -206,6 +209,12 @@ class PulseControl:
             Figure and axes for the construction of a custom plot.
 
         """
+        try:
+            import matplotlib.pyplot as plt  # noqa: PLC0415
+        except ImportError as exc:
+            raise ImportError(
+                "matplotlib is required for plot_pulse. Install it with: pip install geodesiq[plot]"
+            ) from exc
 
         t, pulse = self._pulse_times, self._pulse
 

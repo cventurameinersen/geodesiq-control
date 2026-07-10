@@ -47,12 +47,14 @@ def about() -> None:
     print(f"Numpy Version:      {_module_version('numpy')}")
     print(f"Scipy Version:      {_module_version('scipy')}")
     print(f"QuTiP Version:      {_module_version('qutip')}")
+
+    print("\nOptional Dependencies:")
     print(f"Matplotlib Version: {_module_version('matplotlib')}")
 
     print()
     print("=" * 50)
-    print("Please cite geodesiq in your publication:")
-    print("Your Citation Information Here")
+    print("Please cite geodesiq in your publication.")
+    print("Reference paper: https://github.com/geodesiq-control/geodesiq-control")
     print("=" * 50)
 
 

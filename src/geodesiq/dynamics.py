@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any, List, Optional
 
 import numpy as np
@@ -41,7 +43,7 @@ class Dynamics:
         self._control_sol = np.asarray(self._control_sol, dtype=float)
 
         self._duration = duration
-        self._pulse_times: np.ndarray = duration * np.linspace(0, 1, len(self._control_sol))  # Real-time array
+        self._pulse_times: np.ndarray = duration * np.linspace(0, 1, len(self._control_sol))  # type: ignore[arg-type]
 
     def _control_kwargs(self, control_value: float) -> dict[str, Any]:
         control_name = self._control_name
@@ -57,7 +59,6 @@ class Dynamics:
         """
         Construct the time-dependent ControlModel using QuTiP Qobj
         """
-
         pulse_times: list[float] = np.asarray(self._pulse_times, dtype=float).tolist()
         control_sol: list[float] = np.asarray(self._control_sol, dtype=float).tolist()
         control_val_t = float(np.interp(t, pulse_times, control_sol))

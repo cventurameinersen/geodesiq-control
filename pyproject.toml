@@ -25,12 +25,15 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering",
     "Typing :: Typed",
 ]
 dependencies = [
     "numpy>=1.23",
-    "scipy>=1.13",
+    "scipy>=1.14",
+    "qutip>=5.0.4",
 ]
 
 [project.urls]
@@ -54,7 +57,6 @@ dev = [
     "joblib>=1.5.2",
     "jupyterlab>=4.5.8",
     "jupyterlab-execute-time>=3.3.0",
-    "qutip>=5.0.4",
     "theme-darcula>=4.0.0",
     "tqdm>=4.68.2",
     "parameterrun>=0.4.1",
