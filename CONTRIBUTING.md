@@ -46,3 +46,25 @@ uv run python -m twine check dist/*
 - Add entries to the `[Unreleased]` section in `CHANGELOG.md`.
 - At release time, move those entries under a versioned heading.
 
+## Bumping the version
+
+Use the `dev/bump_version.py` script to update the version consistently across all project files (`src/geodesiq/_meta.py` and `CHANGELOG.md`).
+
+**Bump by increment type:**
+```bash
+python dev/bump_version.py --patch   # e.g. 0.1.0 → 0.1.1
+python dev/bump_version.py --minor   # e.g. 0.1.1 → 0.2.0
+python dev/bump_version.py --major   # e.g. 0.2.0 → 1.0.0
+```
+
+**Set an explicit version:**
+```bash
+python dev/bump_version.py 1.2.3
+```
+
+The script will:
+1. Update `__version__` in `src/geodesiq/_meta.py`.
+2. Insert a new dated section for the new version in `CHANGELOG.md`.
+
+After running the script, commit the changes, push to `dev`, and open a pull request into `main` to trigger the release workflow.
+

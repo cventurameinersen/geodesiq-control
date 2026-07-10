@@ -74,27 +74,27 @@ def update_meta_file(meta_file: Path, new_version: str) -> None:
 
 
 def update_changelog(changelog_file: Path, new_version: str) -> None:
-    """Update CHANGELOG.md with new version section."""
+    """Update CHANGELOG.md with new version section.
+
+    Renames the existing [Unreleased] heading to the new version and inserts
+    a fresh empty [Unreleased] section above it.
+    """
     content = changelog_file.read_text()
 
-    # Create new version entry
     date = datetime.now().strftime("%Y-%m-%d")
-    new_entry = f"""## [{new_version}] - {date}
+    new_unreleased = "## [Unreleased]\n\n"
+    versioned_heading = f"## [{new_version}] - {date}"
 
-### Added
-- (Your changes here)
+    # Replace "## [Unreleased]" with a new empty [Unreleased] + versioned heading
+    updated = re.sub(
+        r"## \[Unreleased\]",
+        f"{new_unreleased}{versioned_heading}",
+        content,
+        count=1,
+    )
 
-"""
-
-    # Replace [Unreleased] section with new version and restore [Unreleased]
-    updated = re.sub(r"## \[Unreleased\]", f"{new_entry}## [Unreleased]", content)
-
-    # If no changes were made, insert new version after the header
     if updated == content:
-        lines = content.split("\n")
-        insert_idx = next(i for i, line in enumerate(lines) if line.startswith("## "))
-        lines.insert(insert_idx, new_entry.rstrip("\n"))
-        updated = "\n".join(lines)
+        raise ValueError("Could not find '## [Unreleased]' section in CHANGELOG.md")
 
     changelog_file.write_text(updated)
     print(f"✓ Updated {changelog_file.relative_to(changelog_file.parent.parent.parent)}")
