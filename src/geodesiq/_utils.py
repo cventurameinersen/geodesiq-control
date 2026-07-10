@@ -80,8 +80,8 @@ class Flags:
     def get(self, name: str) -> bool:
         """Return the value of a flag.
 
-        The effective value is ``False`` when the flag itself or any of
-        its ancestors is ``False``.
+        Descendants are explicitly reset when a parent is set to ``False``,
+        so this method returns the stored value directly.
 
         Raises
         ------
@@ -111,6 +111,8 @@ class Flags:
             If *name* is not registered.
         """
         self._check_exists(name)
+        if not isinstance(value, bool):
+            raise TypeError("Flag values must be booleans.")
         self._values[name] = value
 
         for child in self._children[name]:
@@ -157,6 +159,12 @@ class Flags:
 
 
 def build_diab(initial_state: int, final_state: int, dim: int) -> np.ndarray:
+    """Build the adiabatic/diabatic transition mask with validated indices."""
+    if not isinstance(dim, int) or isinstance(dim, bool) or dim < 1:
+        raise ValueError("dim must be a positive integer.")
+    for label, state in (("initial_state", initial_state), ("final_state", final_state)):
+        if not isinstance(state, int) or isinstance(state, bool) or not 0 <= state < dim:
+            raise ValueError(f"{label} must be an integer in [0, {dim - 1}].")
     diad_list = -1 * np.eye(dim, dtype=int)  # Diagonal entries are -1 by default
 
     min_state = min(initial_state, final_state)

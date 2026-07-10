@@ -54,7 +54,7 @@ def about() -> None:
     print()
     print("=" * 50)
     print("Please cite geodesiq in your publication.")
-    print("Reference paper: https://github.com/geodesiq-control/geodesiq-control")
+    print("Reference paper: ")
     print("=" * 50)
 
 
