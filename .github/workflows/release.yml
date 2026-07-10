@@ -6,7 +6,7 @@ on:
     types: [ completed ]
     branches: [ main ]
 
-permissions: {}
+permissions: { }
 
 concurrency:
   group: release-main
@@ -14,11 +14,7 @@ concurrency:
 
 jobs:
   release:
-    if: >-
-        github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-        github.event.workflow_run.head_branch == 'main'
-
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -43,12 +39,24 @@ jobs:
 
           meta_file = pathlib.Path("src/geodesiq/_meta.py")
           content = meta_file.read_text(encoding="utf-8")
-          match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', content)
+
+          match = re.search(
+              r'__version__\s*=\s*["\']([^"\']+)["\']',
+              content,
+          )
+
           if not match:
-              raise SystemExit("Could not find __version__ in src/geodesiq/_meta.py")
+              raise SystemExit(
+                  "Could not find __version__ in src/geodesiq/_meta.py"
+              )
 
           version = match.group(1)
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+
+          with open(
+              os.environ["GITHUB_OUTPUT"],
+              "a",
+              encoding="utf-8",
+          ) as output:
               output.write(f"version={version}\n")
               output.write(f"tag=v{version}\n")
           PY
@@ -58,8 +66,14 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
         run: |
           git fetch --tags origin
-          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
-            echo "Tag ${TAG} already exists. Bump __version__ before merging to main."
+
+          if git ls-remote \
+            --exit-code \
+            --tags origin \
+            "refs/tags/${TAG}" >/dev/null 2>&1
+          then
+            echo "Tag ${TAG} already exists."
+            echo "Bump __version__ before merging to main."
             exit 1
           fi
 
@@ -73,17 +87,26 @@ jobs:
           import re
 
           version = os.environ["VERSION"]
-          changelog = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+
+          changelog = pathlib.Path("CHANGELOG.md").read_text(
+              encoding="utf-8"
+          )
 
           pattern = re.compile(
-              rf"^## \[{re.escape(version)}\][^\n]*\n(?P<body>.*?)(?=^## \[|\Z)",
+              rf"^## \[{re.escape(version)}\][^\n]*\n"
+              rf"(?P<body>.*?)(?=^## \[|\Z)",
               re.MULTILINE | re.DOTALL,
           )
+
           match = pattern.search(changelog)
+
           if not match:
-              raise SystemExit(f"Could not find CHANGELOG entry for version {version}")
+              raise SystemExit(
+                  f"Could not find CHANGELOG entry for version {version}"
+              )
 
           notes = match.group("body").strip()
+
           pathlib.Path("release_notes.md").write_text(
               notes + "\n",
               encoding="utf-8",
