@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Tuple
+from typing import TYPE_CHECKING, Optional, Tuple
 
 import numpy as np
 import scipy as sp
@@ -43,10 +43,36 @@ class PulseControl:
             Keyword arguments for the pulse synthesis (e.g., duration, filter parameters).
         """
 
+        pulse = np.asarray(pulse, dtype=float)
+        times = np.asarray(duration * np.linspace(0, 1, len(pulse)), dtype=float)
+
+        if pulse.ndim != 1:
+            raise ValueError("The pulse must be one-dimensional.")
+
+        if times.ndim != 1:
+            raise ValueError("The time grid must be one-dimensional.")
+
+        if pulse.size < 2:
+            raise ValueError("The pulse must contain at least two points.")
+
+        if pulse.shape != times.shape:
+            raise ValueError("The pulse and time grid must have the same shape.")
+
+        if not np.all(np.isfinite(pulse)):
+            raise ValueError("The pulse contains non-finite values.")
+
+        if not np.all(np.isfinite(times)):
+            raise ValueError("The time grid contains non-finite values.")
+
+        if not np.all(np.diff(times) > 0.0):
+            raise ValueError("The time grid must be strictly increasing.")
+
+        if times[-1] <= times[0]:
+            raise ValueError("The pulse duration must be positive.")
+
         self._pulse = pulse
         self._duration = duration
-        self._pulse_times = duration * np.linspace(0, 1,
-                                                   len(pulse))  # Rescaled time array corresponding to the pulse values
+        self._pulse_times = times
         self._method = method
         self._pulse_args = pulse_args if pulse_args is not None else ()
         self._pulse_kwargs = pulse_kwargs if pulse_kwargs is not None else {}
@@ -54,12 +80,12 @@ class PulseControl:
     def __call__(self):
         """
         Call the appropriate pulse processing method based on stored arguments.
-        
+
         Returns
         -------
         output: Any
             Result from the called method.
-            
+
         Raises
         ------
         MissingArgsError
@@ -91,8 +117,8 @@ class PulseControl:
     def discretized_pulse(self, linear_steps: int = 4) -> Tuple[np.ndarray, np.ndarray]:
         """
         Obtains the piecewise linear function from control pulse.
-        
-               
+
+
         Parameters
         ----------
         linear_steps: int
@@ -104,7 +130,7 @@ class PulseControl:
             Rescaled time array for the piecewise linear approximation.
         approx_sol: np.ndarray
             Control pulse values corresponding to the new rescaled time array for the piecewise linear approximation.
-        
+
         """
 
         piecewise_linear = interp1d(self._pulse_times, self._pulse, kind='linear', fill_value="extrapolate")
@@ -213,8 +239,7 @@ class PulseControl:
             import matplotlib.pyplot as plt  # noqa: PLC0415
         except ImportError as exc:
             raise ImportError(
-                "matplotlib is required for plot_pulse. Install it with: pip install geodesiq[plot]"
-            ) from exc
+                "matplotlib is required for plot_pulse. Install it with: pip install geodesiq[plot]") from exc
 
         t, pulse = self._pulse_times, self._pulse
 
@@ -259,9 +284,8 @@ class PulseControl:
             raise IOErrorGeodesiQ(f"File already exists (choose overwrite=True to remove safety check.): {output_path}")
 
         # Save data depending on users preference
-        if file_extension == 'npy':
-            npy_payload: dict[str, Any] = {"t": t, "pulse": pulse}
-            np.save(output_path, np.array(npy_payload, dtype=object))
+        if file_extension == 'npz':
+            np.savez(output_path, times=t, pulse=pulse)
         elif file_extension == 'txt':
             txt_data: np.ndarray = np.column_stack((t, pulse))
             np.savetxt(output_path, txt_data, delimiter=",", header="t,pulse", comments="", fmt="%.8f")
@@ -270,6 +294,6 @@ class PulseControl:
             np.savetxt(output_path, csv_data, delimiter=",", header="t,pulse", comments="", fmt="%.8f")
         else:
             raise MissingArgsError(
-                f"Unsupported data_type '{file_extension}'. Supported types are: 'npy', 'txt', and 'csv'. ")
+                f"Unsupported data_type '{file_extension}'. Supported types are: 'npz', 'txt', and 'csv'. ")
 
         print(f"[{PACKAGE_NAME}] File saved as '{output_path}' type.")

@@ -8,6 +8,7 @@ from matplotlib.figure import Figure
 from geodesiq.exceptions import ValidationError
 from geodesiq.pulses import PulseControl
 
+
 # ------------------------------------------------------------
 # Ramp pulse as pytest.fixtures
 # ------------------------------------------------------------
@@ -122,16 +123,16 @@ def test_plot_pulse_with_show_invokes_matplotlib_show(default_pulse, monkeypatch
 # Testing export_pulse method
 # ------------------------------------------------------------
 
-def test_export_pulse_as_npy(default_pulse, tmp_path):
+def test_export_pulse_as_npz(default_pulse, tmp_path):
     """Verify .npy file export works seamlessly using a temporary test directory."""
 
     test_file_base = os.path.join(tmp_path, "test_pulse")
-    default_pulse.export_pulse(filename=test_file_base, file_extension="npy")
-    expected_full_path = test_file_base + ".npy"
+    default_pulse.export_pulse(filename=test_file_base, file_extension="npz")
+    expected_full_path = test_file_base + ".npz"
     assert os.path.exists(expected_full_path)
 
     # Load back data to verify integrity
-    loaded_data = np.load(expected_full_path, allow_pickle=True).item()
+    loaded_data = np.load(expected_full_path)
     np.testing.assert_array_equal(loaded_data["pulse"], default_pulse._pulse)
 
 
@@ -155,11 +156,11 @@ def test_export_pulse_raises_on_existing_file(default_pulse, tmp_path):
     test_file_base = os.path.join(tmp_path, "test_pulse_overwrite")
 
     # First export
-    default_pulse.export_pulse(filename=test_file_base, file_extension="npy")
+    default_pulse.export_pulse(filename=test_file_base, file_extension="npz")
 
     # Second export should raise error
     with pytest.raises(IOErrorGeodesiQ, match="File already exists"):
-        default_pulse.export_pulse(filename=test_file_base, file_extension="npy", overwrite=False)
+        default_pulse.export_pulse(filename=test_file_base, file_extension="npz", overwrite=False)
 
 
 def test_export_pulse_with_overwrite(default_pulse, tmp_path):
@@ -167,11 +168,11 @@ def test_export_pulse_with_overwrite(default_pulse, tmp_path):
     test_file_base = os.path.join(tmp_path, "test_pulse_overwrite2")
 
     # First export
-    default_pulse.export_pulse(filename=test_file_base, file_extension="npy")
-    original_path = test_file_base + ".npy"
+    default_pulse.export_pulse(filename=test_file_base, file_extension="npz")
+    original_path = test_file_base + ".npz"
 
     # Second export with overwrite=True should succeed
-    default_pulse.export_pulse(filename=test_file_base, file_extension="npy", overwrite=True)
+    default_pulse.export_pulse(filename=test_file_base, file_extension="npz", overwrite=True)
     assert os.path.exists(original_path)
 
 
@@ -188,8 +189,8 @@ def test_export_pulse_unsupported_extension(default_pulse, tmp_path):
 def test_export_pulse_strips_leading_dot(default_pulse, tmp_path):
     """Verify export_pulse correctly handles file extensions with leading dot."""
     test_file_base = os.path.join(tmp_path, "test_pulse_dot")
-    default_pulse.export_pulse(filename=test_file_base, file_extension=".npy")
-    expected_full_path = test_file_base + ".npy"
+    default_pulse.export_pulse(filename=test_file_base, file_extension=".npz")
+    expected_full_path = test_file_base + ".npz"
     assert os.path.exists(expected_full_path)
 
 
