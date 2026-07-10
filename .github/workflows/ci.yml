@@ -108,10 +108,10 @@ jobs:
           cache-suffix: ${{ matrix.os }}-py${{ matrix.python-version }}
 
       - name: Sync environment
-        run: uv sync --locked --group test
+        run: uv sync --only-group test
 
       - name: Run full test suite
-        run: uv run --locked pytest
+        run: uv run pytest
 
   build-package:
     name: Build package
