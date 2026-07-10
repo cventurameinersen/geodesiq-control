@@ -1,0 +1,136 @@
+from __future__ import annotations
+
+from typing import Any, cast
+
+import numpy as np
+import pytest
+from scipy.integrate import solve_ivp
+
+from geodesiq import ControlModel
+from geodesiq.exceptions import (InvalidControlParameterError, MetricComputationError, )
+
+
+def lz_hamiltonian(lam: float, delta: float = 0.5) -> np.ndarray:
+    return np.array([[lam, delta], [delta, -lam]], dtype=float)
+
+
+def lz_partial(lam: float, delta: float = 0.5) -> np.ndarray:
+    del lam, delta
+    return np.array([[1.0, 0.0], [0.0, -1.0]], dtype=float)
+
+
+def configured_model(*, analytical: bool = True) -> ControlModel:
+    model = ControlModel(lz_hamiltonian, lz_partial if analytical else None)
+    model.set_parameters(delta=0.5)
+    model.set_control(control_name="lam", pulse_initial=-3.0, pulse_final=3.0, initial_state=0, alpha=2.0, beta=2.0,
+                      num_steps=65, )
+    return model
+
+
+def test_numerical_derivative_supports_complex_hamiltonians():
+    def hamiltonian(z: float) -> np.ndarray:
+        return np.array([[z, 1j], [-1j, -z]], dtype=complex)
+
+    model = ControlModel(hamiltonian)
+    model.set_control(control_name="z", pulse_initial=-2.0, pulse_final=2.0, initial_state=0, alpha=2.0, beta=2.0,
+                      num_steps=65, )
+    model.solve_problem(pulse_accuracy=80)
+
+    assert model._flags['ode_solved']
+    assert np.all(np.isfinite(model.control_sol))
+
+
+def test_numerical_derivative_is_complex_preserving_and_accurate():
+    def hamiltonian(z: float) -> np.ndarray:
+        return np.array([[z ** 2, 1j * z], [-1j * z, -(z ** 2)]], dtype=complex)
+
+    model = ControlModel(hamiltonian)
+    model.set_control(control_name="z", pulse_initial=-1.0, pulse_final=1.0, initial_state=0, alpha=0.0, beta=0.0,
+                      num_steps=65, )
+    model._solve_eigenproblem()
+    derivative = model._compute_numerical_partial_H()
+    z = model.control_pulse
+    expected = np.array([[[2 * value, 1j], [-1j, -2 * value]] for value in z])
+    np.testing.assert_allclose(derivative, expected, atol=1e-10)
+
+
+def test_parameter_cannot_override_control_sweep():
+    model = ControlModel(lz_hamiltonian, lz_partial)
+    model.set_control(control_name="lam")
+    with pytest.raises(InvalidControlParameterError, match="as a fixed parameter"):
+        model.set_parameters(lam=7.0)
+
+
+def test_control_name_cannot_collide_with_existing_parameter():
+    model = ControlModel(lz_hamiltonian, lz_partial)
+    model.set_parameters(lam=7.0)
+    with pytest.raises(InvalidControlParameterError, match="collides"):
+        model.set_control(control_name="lam")
+
+
+def test_control_value_wins_in_internal_evaluation():
+    model = configured_model()
+    np.testing.assert_allclose(model.evaluate_hamiltonian(-1.0), lz_hamiltonian(-1.0, delta=0.5))
+    np.testing.assert_allclose(model.evaluate_hamiltonian(1.0), lz_hamiltonian(1.0, delta=0.5))
+
+
+def test_zero_metric_raises_instead_of_entering_solver():
+    def constant_hamiltonian(z: float) -> np.ndarray:
+        del z
+        return np.diag([0.0, 1.0])
+
+    def zero_partial(z: float) -> np.ndarray:
+        return np.zeros((2, 2))
+
+    model = ControlModel(constant_hamiltonian, zero_partial)
+    model.set_control(control_name="z", pulse_initial=-1.0, pulse_final=1.0, initial_state=0, alpha=2.0, beta=2.0,
+                      num_steps=33, )
+    with pytest.raises(MetricComputationError, match="zero or numerically singular"):
+        model.solve_problem()
+
+
+def test_degenerate_gap_raises_clear_metric_error():
+    def hamiltonian(z: float) -> np.ndarray:
+        return np.array([[z, 0.0], [0.0, -z]])
+
+    model = ControlModel(hamiltonian, lambda z: np.array([[1.0, 0.0], [0.0, -1.0]]))
+    model.set_control(control_name="z", pulse_initial=-1.0, pulse_final=1.0, initial_state=0, alpha=2.0, beta=2.0,
+                      num_steps=33, )
+    with pytest.raises(MetricComputationError, match="Degenerate or near-degenerate"):
+        model.solve_problem()
+
+
+def test_equal_pulse_endpoints_are_rejected():
+    model = ControlModel(lz_hamiltonian, lz_partial)
+    with pytest.raises(InvalidControlParameterError, match="must be different"):
+        model.set_control(control_name="lam", pulse_initial=1.0, pulse_final=1.0)
+
+
+@pytest.mark.parametrize("state", [-1, cast(Any, 1.5), cast(Any, True)])
+def test_invalid_state_indices_are_rejected_early(state: Any):
+    model = ControlModel(lz_hamiltonian, lz_partial)
+    with pytest.raises(InvalidControlParameterError):
+        model.initial_state = state
+
+
+def test_synthesis_preserves_custom_solver_configuration():
+    model = configured_model()
+    calls = {"count": 0}
+
+    def custom_solver(fun, t_span, y0, t_eval=None, **kwargs):
+        calls["count"] += 1
+        return solve_ivp(fun, t_span, y0, t_eval=t_eval, **kwargs)
+
+    model.solve_problem(pulse_accuracy=30, solver=custom_solver, solver_kwargs={"rtol": 1e-8, "atol": 1e-10}, )
+    model.synthesize_pulse(duration=1.0)
+
+    assert calls["count"] == 1
+
+
+def test_decreasing_control_sweep_is_supported():
+    model = ControlModel(lz_hamiltonian, lz_partial)
+    model.set_parameters(delta=0.5)
+    model.set_control(control_name="lam", pulse_initial=3.0, pulse_final=-3.0, initial_state=0, alpha=2.0, beta=2.0,
+                      num_steps=65, )
+    model.solve_problem(pulse_accuracy=80)
+    assert np.all(np.diff(model.control_sol) <= 1e-8)

@@ -44,6 +44,10 @@ class PulseControl:
         """
 
         pulse = np.asarray(pulse, dtype=float)
+
+        if duration <= 0:
+            raise ValueError("The duration must be positive.")
+
         times = np.asarray(duration * np.linspace(0, 1, len(pulse)), dtype=float)
 
         if pulse.ndim != 1:
@@ -149,7 +153,7 @@ class PulseControl:
         window_len : int, optional
             The length of the window segment in number of samples. Default is 256.
         hop : int, optional
-            The number of samples to advance between successive windows. Default is 64.
+            The number of samples to advance between successive windows. Default is 32.
 
         Returns
         -------
@@ -176,7 +180,7 @@ class PulseControl:
 
         return frequencies, times, magnitude
 
-    def filtered_pulse(self, cutoff_freq, filter_order: int = 3) -> Tuple[np.ndarray, np.ndarray]:
+    def filtered_pulse(self, cutoff_freq: float, filter_order: int = 3) -> Tuple[np.ndarray, np.ndarray]:
         """
         Apply a low-pass Butterworth filter to the control pulse.
 
@@ -194,6 +198,8 @@ class PulseControl:
         filtered_pulse: np.ndarray
             Returns the (butterworth-)filtered control pulse.
         """
+        if cutoff_freq <= 0:
+            raise ValidationError(f"Cutoff frequency must be positive. Given: {cutoff_freq}")
 
         if not isinstance(filter_order, int) or filter_order < 1:
             raise ValidationError("filter_order must be a positive integer.")

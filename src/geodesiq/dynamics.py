@@ -114,7 +114,7 @@ class Dynamics:
             psi_target = self._eigenstate(float(control_pulse[-1]), final_state)
 
         elif isinstance(initial_state, np.ndarray) and isinstance(final_state, np.ndarray):
-            ham_shape = self._H_func(**self._control_kwargs(0)).shape
+            ham_shape = self._get_ham(0).shape
 
             if initial_state.shape[0] != ham_shape[0] or final_state.shape[0] != ham_shape[0]:
                 raise ValidationError(

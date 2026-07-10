@@ -6,13 +6,8 @@ from scipy.integrate import romb, solve_ivp
 from scipy.interpolate import interp1d
 
 from ._utils import Flags, build_diab
-from .exceptions import (
-    ImmutableConfigurationError,
-    InvalidControlParameterError,
-    MissingControlParameterError,
-    SolverError,
-    ValidationError,
-)
+from .exceptions import (ImmutableConfigurationError, InvalidControlParameterError, MissingControlParameterError,
+                         SolverError, ValidationError, MetricComputationError)
 from .pulses import PulseControl
 
 
@@ -20,9 +15,11 @@ class ControlModel:
     """
     A class to represent a parameter-dependent ControlModel and solve the optimization problem for finding the optimal
     control pulse. The ControlModel is defined as a function of a control parameter (e.g., lambda) and can also depend
-    on other _parameters. The class provides methods to set the _parameters, compute the metric tensor, solve the ODE
+    on other parameters. The class provides methods to set the parameters, compute the metric tensor, solve the ODE
     for the control pulse, and synthesize the control pulse based on the solution of the optimization problem.
     """
+
+    _SINGULARITY_RTOL = 1e-12
 
     def __init__(self, H_func: Callable[..., np.ndarray], partial_H_func: Optional[Callable[..., np.ndarray]] = None,
                  _flags_verbose: bool = False):
@@ -32,11 +29,11 @@ class ControlModel:
         Parameters
         ----------
         H_func : Callable[..., np.ndarray]
-            A function that takes the control parameter and other _parameters as input and returns the ControlModel
+            A function that takes the control parameter and other parameters as input and returns the ControlModel
             matrix as a numpy array. The function should be defined such that it can accept the control parameter as a
             keyword argument, e.g., H_func(lambda=..., param1=..., param2=..., ...).
         partial_H_func : Optional[Callable[..., np.ndarray]]
-            An optional function that takes the control parameter and other _parameters as input and returns the partial
+            An optional function that takes the control parameter and other parameters as input and returns the partial
             derivative of the ControlModel with respect to the control parameter as a numpy array.
             If this function is not provided, the class will compute the numerical partial derivative.
         """
@@ -55,7 +52,7 @@ class ControlModel:
         else:
             self._flag_numerical_partial_H = True
 
-        # Initialize _parameters and control settings
+        # Initialize parameters and control settings
         self._parameters: dict[str, Any] = {}
         self._control_name = None
         self._pulse_initial = None
@@ -77,7 +74,7 @@ class ControlModel:
         self._metric_tensor = None
         self._a_tilde = None
 
-        # Initialize pulse _parameters
+        # Initialize pulse parameters
         self._s = None
         self._control_pulse = None
         self._control_sol = None
@@ -90,20 +87,35 @@ class ControlModel:
         self._metric_integrator_kwargs: dict[str, Any] = {}
         self._previous_pulse_accuracy = None  # To track changes in pulse accuracy for ODE solving
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args, **kwargs) -> np.ndarray:
         # Return the ControlModel function if the object is called directly, allowing for easy evaluation of the
         #   ControlModel at specific control values
         # Runtime kwargs override stored defaults for explicit one-off evaluations.
         return self.H_func(*args, **{**self._parameters, **kwargs})
 
+    def _evaluation_kwargs(self, control_value: float) -> dict[str, Any]:
+        if self.control_name is None:
+            raise MissingControlParameterError("control_name must be set before evaluating the Hamiltonian.")
+        return {**self._parameters, self.control_name: float(control_value)}
+
+    def evaluate_hamiltonian(self, control_value: float) -> np.ndarray:
+        """Evaluate and validate the Hamiltonian at one control value."""
+        if not isinstance(control_value, (int, float, np.integer, np.floating)) or isinstance(control_value, bool):
+            raise InvalidControlParameterError("Control value must be a finite real number.")
+        if not np.isfinite(control_value):
+            raise InvalidControlParameterError("Control value must be finite.")
+        matrix = self.H_func(**self._evaluation_kwargs(float(control_value)))
+
+        return matrix
+
     # Setters and getters are defined for the critical attributes of the ControlModel class, so we have control over how
     # the user modifies them. It is important that the correct flags are updated when these attributes are changed
     @property
-    def H_func(self):
+    def H_func(self) -> Callable[..., np.ndarray]:
         return self._H_func
 
     @H_func.setter
-    def H_func(self, func):
+    def H_func(self, func: Callable[..., np.ndarray]):
         if self._H_func is None:
             self._H_func = func
         else:
@@ -111,11 +123,11 @@ class ControlModel:
                                               " please create a new instance of the ControlModel class.")
 
     @property
-    def partial_H_func(self):
+    def partial_H_func(self) -> Callable[..., np.ndarray] | None:
         return self._partial_H_func
 
     @partial_H_func.setter
-    def partial_H_func(self, func):
+    def partial_H_func(self, func: Callable[..., np.ndarray]):
         if self._partial_H_func is None:
             self._partial_H_func = func
             self._flag_numerical_partial_H = False  # Update the numerical partial flag
@@ -126,11 +138,11 @@ class ControlModel:
                 " please create a new instance of the ControlModel class.")
 
     @property
-    def control_name(self):
+    def control_name(self) -> str:
         return self._control_name
 
     @control_name.setter
-    def control_name(self, name):
+    def control_name(self, name: str):
         if name is None:  # Keep the previous value
             return
         if not isinstance(name, str):
@@ -141,16 +153,20 @@ class ControlModel:
         self._flags['eigenproblem_solved'] = False  # Reset the eigenproblem solved flag if the control name changes
 
     @property
-    def pulse_initial(self):
+    def pulse_initial(self) -> float:
         return self._pulse_initial
 
     @pulse_initial.setter
-    def pulse_initial(self, value):
+    def pulse_initial(self, value: float):
         if value is None:  # Keep the previous value
             return
 
         if not isinstance(value, (int, float)):
             raise InvalidControlParameterError("Pulse initial value must be a number.")
+
+        if self._pulse_final is not None:
+            if np.isclose(value, self._pulse_final):
+                raise ValueError("The initial and final control values must be different.")
 
         if value == self._pulse_initial:  # Keep the previous value
             return
@@ -160,16 +176,20 @@ class ControlModel:
             'eigenproblem_solved'] = False  # Reset the eigenproblem solved flag if the pulse initial value changes
 
     @property
-    def pulse_final(self):
+    def pulse_final(self) -> float:
         return self._pulse_final
 
     @pulse_final.setter
-    def pulse_final(self, value):
+    def pulse_final(self, value: float):
         if value is None:  # Keep the previous value
             return
 
         if not isinstance(value, (int, float)):
             raise InvalidControlParameterError("Pulse final value must be a number.")
+
+        if self._pulse_initial is not None:
+            if np.isclose(value, self._pulse_initial):
+                raise ValueError("The initial and final control values must be different.")
 
         if value == self._pulse_final:  # Keep the previous value
             return
@@ -178,16 +198,19 @@ class ControlModel:
             'eigenproblem_solved'] = False  # Reset the eigenproblem solved flag if the pulse final value changes
 
     @property
-    def initial_state(self):
+    def initial_state(self) -> int:
         return self._initial_state
 
     @initial_state.setter
-    def initial_state(self, value):
+    def initial_state(self, value: int):
         if value is None:  # Keep the previous value
             return
 
-        if not isinstance(value, int):
+        if not isinstance(value, (int, np.integer)) or isinstance(value, bool):
             raise InvalidControlParameterError("Initial state index must be an integer.")
+
+        if value < 0:
+            raise InvalidControlParameterError("Initial state index must be positive.")
 
         if value == self._initial_state:  # Keep the previous value
             return
@@ -205,16 +228,19 @@ class ControlModel:
             self._flags['dia_list_computed'] = True
 
     @property
-    def final_state(self):
+    def final_state(self) -> int:
         return self._final_state
 
     @final_state.setter
-    def final_state(self, value):
+    def final_state(self, value: int):
         if value is None:  # Keep the previous value
             return
 
-        if not isinstance(value, int):
+        if not isinstance(value, (int, np.integer)) or isinstance(value, bool):
             raise InvalidControlParameterError("Final state index must be an integer.")
+
+        if value < 0:
+            raise InvalidControlParameterError("Final state index must be positive.")
 
         if value == self._final_state:  # Keep the previous value
             return
@@ -228,11 +254,11 @@ class ControlModel:
             self._flags['dia_list_computed'] = True
 
     @property
-    def alpha(self):
+    def alpha(self) -> float:
         return self._alpha
 
     @alpha.setter
-    def alpha(self, value):
+    def alpha(self, value: float):
         if value is None:  # Keep the previous value
             return
 
@@ -246,11 +272,11 @@ class ControlModel:
         self._flags['metric_computed'] = False  # Reset the metric computed flag if alpha changes
 
     @property
-    def beta(self):
+    def beta(self) -> float:
         return self._beta
 
     @beta.setter
-    def beta(self, value):
+    def beta(self, value: float):
         if value is None:  # Keep the previous value
             return
 
@@ -264,11 +290,11 @@ class ControlModel:
         self._flags['metric_computed'] = False  # Reset the metric computed flag if beta changes
 
     @property
-    def dia_alpha(self):
+    def dia_alpha(self) -> float | None:
         return self._dia_alpha
 
     @dia_alpha.setter
-    def dia_alpha(self, value):
+    def dia_alpha(self, value: float):
         if value is None:  # Keep the previous value
             return
 
@@ -282,11 +308,11 @@ class ControlModel:
         self._flags['metric_computed'] = False  # Reset the metric computed flag if alpha changes
 
     @property
-    def dia_beta(self):
+    def dia_beta(self) -> float | None:
         return self._dia_beta
 
     @dia_beta.setter
-    def dia_beta(self, value):
+    def dia_beta(self, value: float):
         if value is None:  # Keep the previous value
             return
 
@@ -300,11 +326,11 @@ class ControlModel:
         self._flags['metric_computed'] = False  # Reset the metric computed flag if beta changes
 
     @property
-    def num_steps(self):
+    def num_steps(self) -> int:
         return self._num_steps
 
     @num_steps.setter
-    def num_steps(self, value):
+    def num_steps(self, value: int):
         if value is None:  # Keep the previous value
             return
 
@@ -322,7 +348,7 @@ class ControlModel:
         self._flags['eigenproblem_solved'] = False  # Reset the eigenproblem solved flag if the number of steps changes
 
     @property
-    def control_sol(self):
+    def control_sol(self) -> np.ndarray:
         if self._flags['ode_solved']:
             return self._control_sol
         else:
@@ -330,7 +356,7 @@ class ControlModel:
             return self._control_sol
 
     @property
-    def pulse(self):
+    def pulse(self) -> np.ndarray:
         all_flags_check = self._flags.all()
         if all_flags_check:
             return self._pulse
@@ -339,7 +365,7 @@ class ControlModel:
             return self._pulse
 
     @property
-    def eigenenergies(self):
+    def eigenenergies(self) -> np.ndarray:
         """Return ControlModel eigenenergies, solving the eigenproblem if needed."""
         if self._flags['eigenproblem_solved']:
             return self._energies
@@ -349,7 +375,7 @@ class ControlModel:
         return self._energies
 
     @property
-    def control_pulse(self):
+    def control_pulse(self) -> np.ndarray:
         """Return the control-parameter grid, solving the eigenproblem if needed."""
         if self._flags['eigenproblem_solved']:
             return self._control_pulse
@@ -358,21 +384,29 @@ class ControlModel:
         self._solve_eigenproblem()
         return self._control_pulse
 
-    def set_parameters(self, **params):
+    def set_parameters(self, **parameters):
         """
-        Set the _parameters for the ControlModel. This method allows you to specify any _parameters that are needed to
-        compute the ControlModel and its partial derivative. The _parameters should be provided as keyword arguments,
+        Set the parameters for the ControlModel. This method allows you to specify any parameters that are needed to
+        compute the ControlModel and its partial derivative. The parameters should be provided as keyword arguments,
         e.g., set_parameters(param1=value1, param2=value2, ...), and they will be stored. If a single parameter is
         updated, others will not be affected.
         """
 
-        new_params = {**self._parameters, **params}
+        if self.control_name in parameters:
+            raise InvalidControlParameterError(f"{self.control_name!r} is the control variable and cannot also "
+                                               "be supplied as a fixed parameter.")
 
-        if new_params == self._parameters:  # If the new parameters are the same as the current ones, do nothing
-            return
-        else:
-            self._parameters = new_params  # Update the _parameters with the new values
+        new_params = {**self._parameters, **parameters}
+
+        if new_params.keys() != self._parameters.keys():
+            self._parameters = new_params  # Update the parameters with the new values
             self._flags['eigenproblem_solved'] = False  # Reset the eigenproblem solved flag
+        else:
+            for key, value in new_params.items():
+                if not np.allclose(value, self._parameters[key]):
+                    self._parameters = new_params  # Update the parameters with the new values
+                    self._flags['eigenproblem_solved'] = False  # Reset the eigenproblem solved flag
+                    break
 
     def set_control(self, control_name: Optional[str] = None, pulse_initial: Optional[float] = None,
                     pulse_final: Optional[float] = None, initial_state: Optional[int] = None,
@@ -380,10 +414,10 @@ class ControlModel:
                     dia_alpha: Optional[float] = None, dia_beta: Optional[float] = None,
                     num_steps: Optional[int] = None):
         """
-        Set the control _parameters for the optimization problem. This method allows you to specify the control
-        _parameters such as the name of the control parameter, the initial and final values of the control pulse, ....
-        Control _parameters can be set individually, and if any parameter is not provided, it will retain its previous
-        value, so you can update only the _parameters you want without affecting the others.
+        Set the control parameters for the optimization problem. This method allows you to specify the control
+        parameters such as the name of the control parameter, the initial and final values of the control pulse, ....
+        Control parameters can be set individually, and if any parameter is not provided, it will retain its previous
+        value, so you can update only the parameters you want without affecting the others.
 
         Parameters
         ----------
@@ -419,9 +453,26 @@ class ControlModel:
             a default of ``2**10 + 1`` is used.
         """
 
+        candidate_name = self.control_name if control_name is None else control_name
+        if candidate_name is not None and candidate_name in self._parameters:
+            raise InvalidControlParameterError(
+                f"Control name {candidate_name!r} collides with a stored Hamiltonian parameter.")
+        numeric_types = (int, float, np.integer, np.floating)
+        candidate_initial = self.pulse_initial if pulse_initial is None else pulse_initial
+        candidate_final = self.pulse_final if pulse_final is None else pulse_final
+        if (isinstance(candidate_initial, numeric_types) and not isinstance(candidate_initial, bool) and isinstance(
+                candidate_final, numeric_types) and not isinstance(candidate_final, bool) and float(
+            candidate_initial) == float(candidate_final)):
+            raise InvalidControlParameterError("Pulse initial and final values must be different.")
+
+        # Update the final endpoint first when needed to avoid transient equality during range changes.
         self.control_name = control_name
-        self.pulse_initial = pulse_initial
-        self.pulse_final = pulse_final
+        if pulse_initial is not None and pulse_final is not None and pulse_initial == self._pulse_final:
+            self.pulse_final = pulse_final
+            self.pulse_initial = pulse_initial
+        else:
+            self.pulse_initial = pulse_initial
+            self.pulse_final = pulse_final
         self.initial_state = initial_state
         self.final_state = final_state
         self.alpha = alpha
@@ -550,6 +601,18 @@ class ControlModel:
 
         self._flags['eigenproblem_solved'] = True  # Mark the eigenproblem as solved to avoid recomputation
 
+    def _metric_ratio(self, numerator: np.ndarray, denominator: np.ndarray, alpha: float, beta: float,
+                      transition: tuple[int, int], ) -> np.ndarray:
+        if alpha > 0:
+            gap_scale = max(1.0, float(np.max(np.abs(self._energies)))) if self._energies is not None else 1.0
+            tolerance = self._SINGULARITY_RTOL * gap_scale
+            if np.any(denominator <= tolerance):
+                raise MetricComputationError("Degenerate or near-degenerate energy gap encountered for transition "
+                                             f"{transition}; provide a regularized model or avoid the degeneracy.")
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+            ratio = numerator ** beta / denominator ** alpha
+        return np.asarray(ratio, dtype=float)
+
     def _compute_metric_tensor(self):
         """
         Compute the metric tensor G_tensor based on the energies and matrix elements of the ControlModel. If the
@@ -563,6 +626,23 @@ class ControlModel:
         else:
             self._solve_dia_list()  # Ensure the diabatic passage list is computed before computing the metric tensor
             self._compute_G_diabatic()
+
+        if self._metric_tensor is None or self._control_pulse is None:
+            raise MetricComputationError("Metric tensor was not produced.")
+        metric = np.asarray(self._metric_tensor, dtype=float)
+        if not np.all(np.isfinite(metric)):
+            raise MetricComputationError("Metric tensor contains NaN or infinite values.")
+
+        scale = max(1.0, float(np.max(np.abs(metric))))
+        tolerance = 1e-12 * scale
+        if np.any(metric < -tolerance):
+            raise MetricComputationError("Metric tensor contains negative values.")
+        metric = np.maximum(metric, 0.0)
+        if np.any(metric <= tolerance):
+            locations = self._control_pulse[metric <= tolerance]
+            sample = ", ".join(f"{value:.6g}" for value in locations[:3])
+            raise MetricComputationError("Metric tensor is zero or numerically singular" + (
+                f" near control value(s) {sample}." if sample else "."))
 
         dx = float(np.abs(self._control_pulse[1] - self._control_pulse[0]))
         metric_values = np.sqrt(self._metric_tensor)
@@ -585,31 +665,24 @@ class ControlModel:
         self._flags['metric_computed'] = True  # Mark the metric as computed to avoid recomputation
 
     def _compute_G_diabatic(self):
-        num, dim = np.shape(self.eigenenergies)
+        num, dim = self._energies.shape
+        metric = np.zeros(num, dtype=float)
+        alpha, beta = self.alpha, self.beta
 
-        counter_n = 0
-        counter_m = 0
-        diad_tensor = np.zeros([num, dim - 1, dim])
+        dia_alpha, dia_beta = self.dia_alpha, self.dia_beta
+        if alpha is None or beta is None or dia_alpha is None or dia_beta is None:
+            raise MissingControlParameterError("Adiabatic and diabatic metric exponents are required.")
 
         for m in range(dim):
             for n in range(dim):
-
-                if n != m:
-                    ad_idx = self._dia_list[m][n]
-
-                    numerator = self._matrix_elements[:, m, n]
-                    denominator = np.abs(self.eigenenergies[:, n] - self.eigenenergies[:, m])
-
-                    diad_tensor[:, counter_n, counter_m] = np.heaviside(ad_idx, 1) * (
-                            ad_idx * (numerator ** self.beta / (denominator ** self.alpha)) + (1 - ad_idx) * (
-                            numerator ** self.dia_beta / (denominator ** self.dia_alpha)))
-
-                    counter_n += 1
-
-            counter_m += 1
-            counter_n = 0
-
-        self._metric_tensor = np.sum(diad_tensor, axis=(1, 2))
+                if n == m:
+                    continue
+                adiabatic = bool(self._dia_list[m, n])
+                denominator = np.abs(self._energies[:, n] - self._energies[:, m])
+                numerator = self._matrix_elements[:, m, n]
+                metric += self._metric_ratio(numerator, denominator, alpha=alpha if adiabatic else dia_alpha,
+                                             beta=beta if adiabatic else dia_beta, transition=(m, n), )
+        self._metric_tensor = metric
 
     def _compute_G_adiabatic(self):
         """
@@ -618,46 +691,113 @@ class ControlModel:
         """
 
         num, dim = np.shape(self.eigenenergies)
-        counter = 0  # Temp variable to save the number of G_tensor computed
-        G_tensor = np.zeros([num, dim - 1])
-        for i in range(dim):
-            if i != self.initial_state:
-                numerator = self._matrix_elements[:, self.initial_state, i]
-                denominator = np.abs(self.eigenenergies[:, i] - self.eigenenergies[:, self.initial_state])
-                G_tensor[:, counter] = numerator ** self.beta / (denominator ** self.alpha)
+        metric = np.zeros(num, dtype=float)
+        alpha, beta = self.alpha, self.beta
+        if alpha is None or beta is None:
+            raise MissingControlParameterError("Adiabatic metric exponents are required.")
+        for state in range(dim):
+            if state == self.initial_state:
+                continue
+            denominator = np.abs(self._energies[:, state] - self._energies[:, self.initial_state])
+            numerator = self._matrix_elements[:, self.initial_state, state]
+            metric += self._metric_ratio(numerator, denominator, alpha=alpha, beta=beta,
+                                         transition=(self.initial_state, state), )
+        self._metric_tensor = metric
 
-                counter += 1
-
-        self._metric_tensor = np.sum(G_tensor, axis=1)
-
-    def _compute_numerical_partial_H(self) -> np.ndarray:
+    def _compute_numerical_partial_H(self, order: int = 8, ) -> np.ndarray:
         """
-        Compute the numerical partial derivative of the ControlModel with respect to the control parameter using finite
-        differences. This method is used when the analytical partial derivative function is not provided.
+        Evaluate dH/dx at every point of a real-valued grid.
+
+        H_func is assumed not to be vectorized: it accepts one scalar x
+        and returns a real- or complex-valued Hamiltonian.
+
+        Parameters
+        ----------
+        order
+            Order of the finite-difference formula.
+
+        Returns
+        -------
+        dH_dx
+            Derivative with shape (n_points, *H_shape).
         """
+        x_grid = np.asarray(self._control_pulse, dtype=float)
 
-        def H_of_z_vec(xi):
-            xs = xi[0]  # shape (...)
+        if x_grid.ndim != 1:
+            raise ValueError("x_grid must be one-dimensional.")
 
-            xs = np.asarray(xs)
+        if x_grid.size < 2:
+            raise ValueError("x_grid must contain at least two points.")
 
-            # Evaluate once to infer matrix shape and dtype
-            sample = np.asarray(self.H_func(**{self.control_name: xs.flat[0], **self._parameters}))
-            flat_dim = sample.size
+        if not np.all(np.isfinite(x_grid)):
+            raise ValueError("x_grid must contain only finite values.")
 
-            out = np.empty((flat_dim, *xs.shape), dtype=sample.dtype)
+        unique_x = np.unique(x_grid)
 
-            for idx in np.ndindex(xs.shape):
-                out[(slice(None), *idx)] = np.asarray(
-                    self.H_func(**{self.control_name: xs[idx], **self._parameters})).ravel()
+        if unique_x.size < 2:
+            raise ValueError("x_grid must contain at least two distinct points.")
 
-            return out
+        initial_step = float(np.min(np.diff(unique_x)))
 
-        res = jacobian(H_of_z_vec, np.array([self._control_pulse])).df
+        tolerances = {"atol": 1e-10, "rtol": 1e-8, }
 
-        dim = int(np.sqrt(res.shape[0]))
-        res = res.reshape((dim, dim, self.num_steps))
-        return res.transpose(2, 0, 1)  # Reshape and transpose to get the correct shape (num_steps, dim, dim)
+        # Scalar evaluation to determine the Hamiltonian shape.
+        H_reference = np.asarray(self._H_func(**self._evaluation_kwargs(self._control_pulse[0])), dtype=np.complex128, )
+
+        H_shape = H_reference.shape
+        n_elements = H_reference.size
+
+        def evaluate_and_pack(x_column: np.ndarray, ) -> np.ndarray:
+            """
+            Evaluate the non-vectorized Hamiltonian at one scalar x.
+
+            x_column has shape (1,), since x is the only independent
+            variable.
+            """
+            x = float(x_column[0])
+
+            H = np.asarray(self._H_func(**self._evaluation_kwargs(x)), dtype=np.complex128, )
+
+            if H.shape != H_shape:
+                raise ValueError("H_func returned inconsistent shapes: "
+                                 f"expected {H_shape}, got {H.shape}.")
+
+            H_flat = H.ravel()
+
+            # scipy.differentiate.jacobian expects real outputs.
+            return np.concatenate((H_flat.real, H_flat.imag,))
+
+        def packed_hamiltonian(x_array: np.ndarray, ) -> np.ndarray:
+            """
+            Adapt the scalar H_func to SciPy's vectorized interface.
+
+            x_array has shape (1, ...), where the trailing axes contain
+            evaluation points introduced by SciPy.
+            """
+            return np.apply_along_axis(evaluate_and_pack, axis=0, arr=x_array, )
+
+        # Use one-sided differences at the two domain boundaries.
+        x_min = np.min(x_grid)
+        x_max = np.max(x_grid)
+
+        step_direction = np.zeros_like(x_grid, dtype=int)
+        step_direction[x_grid - x_min < initial_step] = 1
+        step_direction[x_max - x_grid < initial_step] = -1
+
+        result = jacobian(packed_hamiltonian, x_grid[np.newaxis, :], order=order, initial_step=initial_step,
+                          step_direction=step_direction[np.newaxis, :], tolerances=tolerances, )
+
+        # result.df shape:
+        # (2 * n_elements, 1, n_points)
+        derivative = np.asarray(result.df[:, 0, :])
+
+        dH_flat = (derivative[:n_elements] + 1j * derivative[n_elements:])
+
+        # Convert from (*H_shape, n_points) to
+        # (n_points, *H_shape).
+        dH_dx = dH_flat.reshape(H_shape + (x_grid.size,))
+
+        return np.moveaxis(dH_dx, -1, 0)
 
     def _solve_ode(self, pulse_accuracy: int):
         """
@@ -726,7 +866,7 @@ class ControlModel:
 
         if missing_params:
             missing_msg = ", ".join(missing_params)
-            raise MissingControlParameterError(f"Missing control _parameters for eigensystem: {missing_msg}. "
+            raise MissingControlParameterError(f"Missing control parameters for eigensystem: {missing_msg}. "
                                                "Please set them using set_control(...).")
 
     def plot_eigenvalues(self, fig=None, ax=None, legend: bool = True, legend_kwargs: Optional[dict] = None,
@@ -867,8 +1007,8 @@ class ControlModel:
 
     def _check_control_parameters(self):
         """
-        Check if all necessary control _parameters are set before solving the problem. If any parameter is missing,
-        raise a ConfigurationError with a clear message indicating which _parameters are missing and how to set them.
+        Check if all necessary control parameters are set before solving the problem. If any parameter is missing,
+        raise a ConfigurationError with a clear message indicating which parameters are missing and how to set them.
         """
         missing_params = []
 
@@ -898,13 +1038,13 @@ class ControlModel:
         if missing_params:
             missing_msg = ", ".join(missing_params)
             raise MissingControlParameterError(
-                f"Missing control _parameters: {missing_msg}. Please set them using set_control"
+                f"Missing control parameters: {missing_msg}. Please set them using set_control"
                 f"({', '.join(f'{name}=<...>' for name in missing_params)}).")
 
     def _generate_summary(self) -> str:
         """
-        Generate a summary string of the current control _parameters and settings. This method creates a formatted
-        string that provides a clear overview of the control _parameters, their values, and any relevant settings for
+        Generate a summary string of the current control parameters and settings. This method creates a formatted
+        string that provides a clear overview of the control parameters, their values, and any relevant settings for
         the optimization problem. The summary can be used for logging, debugging, or displaying the current state of the
         ControlModel object.
         """
@@ -936,8 +1076,8 @@ class ControlModel:
 
     def print_summary(self):
         """
-        Print a summary of the current control _parameters and settings. This method provides a clear overview of the
-        control _parameters, their values, and any relevant settings for the optimization problem.
+        Print a summary of the current control parameters and settings. This method provides a clear overview of the
+        control parameters, their values, and any relevant settings for the optimization problem.
         """
         print(self._generate_summary())
 
