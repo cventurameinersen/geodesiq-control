@@ -3,14 +3,14 @@
 Script to automate version bumping across all project files.
 
 Usage:
-    python scripts/bump_version.py <new_version>
-    python scripts/bump_version.py --patch
-    python scripts/bump_version.py --minor
-    python scripts/bump_version.py --major
+    python dev/bump_version.py <new_version>
+    python dev/bump_version.py --patch
+    python dev/bump_version.py --minor
+    python dev/bump_version.py --major
 
 Example:
-    python scripts/bump_version.py 0.2.0
-    python scripts/bump_version.py --minor  # bumps X.Y to X.Y+1
+    python dev/bump_version.py 0.2.0
+    python dev/bump_version.py --minor  # bumps X.Y to X.Y+1
 """
 
 import re
