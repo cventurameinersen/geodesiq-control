@@ -34,9 +34,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/cventurameinersen/geodesiq-control"
-Repository = "https://github.com/cventurameinersen/geodesiq-control"
-Issues = "https://github.com/cventurameinersen/geodesiq-control/issues"
+Homepage = "https://github.com/geodesiq-control/geodesiq-control"
+Repository = "https://github.com/geodesiq-control/geodesiq-control"
+Issues = "https://github.com/geodesiq-control/geodesiq-control/issues"
 
 [project.optional-dependencies]
 plot = ["matplotlib>=3.9"]
