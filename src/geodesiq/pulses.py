@@ -229,9 +229,6 @@ class PulseControl:
         sampling_rate = 1.0 / dt
         nyquist_freq = sampling_rate / 2.0
 
-        if cutoff_freq <= 0:
-            raise ValidationError(f"Cutoff frequency must be positive. Given: {cutoff_freq}")
-
         if cutoff_freq >= nyquist_freq:
             raise ValidationError(f"cutoff_freq must be smaller than the Nyquist frequency {nyquist_freq:.5g}.")
 
