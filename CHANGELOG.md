@@ -8,7 +8,7 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ## [0.1.1] - 2026-07-10
 
-## Fixed
+### Fixed
 
 - `hbar` validation was too strict.
 - Fix CI to publish the release
