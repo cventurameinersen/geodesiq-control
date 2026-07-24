@@ -32,9 +32,14 @@ def _get_pyplot():
     return plt
 
 
+def simple_hamiltonian(control, offset=0.0):
+    return np.array([[control + offset, 0.0], [0.0, -control + offset], ])
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def bare_ham():
@@ -61,6 +66,7 @@ def configured_ham(ham_with_partial):
 # __init__
 # ---------------------------------------------------------------------------
 
+
 class TestInit:
     def test_init_stores_H_func(self, bare_ham):
         assert bare_ham.H_func is lz_hamiltonian
@@ -80,6 +86,7 @@ class TestInit:
 # ---------------------------------------------------------------------------
 # __call__
 # ---------------------------------------------------------------------------
+
 
 class TestCallable:
     def test_call_delegates_to_h_func_with_runtime_kwargs(self, bare_ham):
@@ -109,6 +116,7 @@ class TestCallable:
 # ---------------------------------------------------------------------------
 # Property setters – validation
 # ---------------------------------------------------------------------------
+
 
 class TestSetterValidation:
     def test_control_name_rejects_non_string(self, bare_ham):
@@ -164,6 +172,7 @@ class TestSetterValidation:
 # H_func / partial_H_func immutability
 # ---------------------------------------------------------------------------
 
+
 class TestFuncImmutability:
     def test_H_func_cannot_be_overwritten(self, bare_ham):
         with pytest.raises(ImmutableConfigurationError, match="already set"):
@@ -192,6 +201,7 @@ class TestFuncImmutability:
 # set_parameters
 # ---------------------------------------------------------------------------
 
+
 class TestSetParameters:
     def test_set_parameters_stores_values(self, bare_ham):
         bare_ham.set_parameters(delta=0.5, gamma=1.0)
@@ -212,10 +222,90 @@ class TestSetParameters:
         configured_ham.set_parameters(delta=2.0)
         assert configured_ham._flags["eigenproblem_solved"] is False
 
+    def test_update_non_numeric_params(self):
+        def hamiltonian(value, letter):
+            if letter == "x":
+                operator = np.array([[0, 1], [1, 0]])
+            elif letter == "y":
+                operator = np.array([[0, -1j], [1j, 0]])
+            else:
+                operator = np.array([[1, 0], [0, 1]])
+
+            return value * operator
+
+        model = ControlModel(hamiltonian)
+        model.set_control(control_name="value")
+        model.set_parameters(letter="x")
+
+        assert np.allclose(model(value=1), hamiltonian(value=1, letter="x"))
+
+        model.set_parameters(letter="y")
+        assert np.allclose(model(value=1), hamiltonian(value=1, letter="y"))
+
+
+# ---------------------------------------------------------------------------
+# get_parameters
+# ---------------------------------------------------------------------------
+class TestGetParameters:
+    def test_parameters_returns_current_parameters(self):
+        model = ControlModel(simple_hamiltonian)
+        model.set_parameters(offset=2.0)
+
+        assert model.parameters["offset"] == 2.0
+
+    def test_parameters_contains_multiple_parameters(self):
+        model = ControlModel(simple_hamiltonian)
+        model.set_parameters(offset=2.0, coupling=0.5)
+
+        assert model.parameters == {"offset": 2.0, "coupling": 0.5, }
+
+    def test_parameters_is_read_only(self):
+        model = ControlModel(simple_hamiltonian)
+        model.set_parameters(offset=2.0)
+
+        with pytest.raises(TypeError):
+            model.parameters["offset"] = 3.0
+
+    def test_parameters_does_not_expose_internal_numpy_array(self):
+        model = ControlModel(simple_hamiltonian)
+
+        array = np.array([1.0, 2.0, 3.0])
+        model.set_parameters(values=array)
+
+        parameters = model.parameters
+        parameters["values"][0] = 100.0
+
+        assert model.parameters["values"][0] == 1.0
+
+    def test_parameters_array_does_not_share_memory(self):
+        model = ControlModel(simple_hamiltonian)
+
+        array = np.array([1.0, 2.0, 3.0])
+        model.set_parameters(values=array)
+
+        returned = model.parameters["values"]
+
+        assert not np.shares_memory(returned, model._parameters["values"])
+
+    def test_parameters_reflects_parameter_updates(self):
+        model = ControlModel(simple_hamiltonian)
+
+        model.set_parameters(offset=1.0)
+        assert model.parameters["offset"] == 1.0
+
+        model.set_parameters(offset=2.0)
+        assert model.parameters["offset"] == 2.0
+
+    def test_parameters_returns_empty_mapping_initially(self):
+        model = ControlModel(simple_hamiltonian)
+
+        assert len(model.parameters) == 0
+
 
 # ---------------------------------------------------------------------------
 # set_control
 # ---------------------------------------------------------------------------
+
 
 class TestSetControl:
     def test_set_control_assigns_all_values(self, bare_ham):
@@ -248,7 +338,7 @@ class TestSetControl:
         configured_ham._flags["metric_computed"] = True
 
         configured_ham.set_control(control_name="lam", pulse_initial=-5.0, pulse_final=5.0, initial_state=0,
-                                   final_state=0, alpha=2.0, beta=2.0, num_steps=2 ** 8 + 1)
+                                   final_state=0, alpha=2.0, beta=2.0, num_steps=2 ** 8 + 1, )
 
         assert configured_ham._flags["eigenproblem_solved"] is True
         assert configured_ham._flags["metric_computed"] is True
@@ -258,12 +348,13 @@ class TestSetControl:
         with pytest.raises(InvalidControlParameterError,
                            match="pulse_initial and pulse_final values must be different"):
             bare_ham.set_control(control_name="lam", pulse_initial=1.0, pulse_final=1.0, initial_state=0, alpha=2.0,
-                                 beta=2.0, num_steps=33)
+                                 beta=2.0, num_steps=33, )
 
 
 # ---------------------------------------------------------------------------
 # _check_control_parameters
 # ---------------------------------------------------------------------------
+
 
 class TestCheckControlParameters:
     def test_missing_all_raises(self, bare_ham):
@@ -292,7 +383,7 @@ class TestCheckControlParameters:
     def test_diabatic_configuration_requires_diabatic_exponents(self):
         ham = ControlModel(lz_hamiltonian, partial_H_func=lz_partial)
         ham.set_control(control_name="lam", pulse_initial=-1.0, pulse_final=1.0, initial_state=0, final_state=1,
-                        alpha=2.0, beta=2.0, num_steps=33)
+                        alpha=2.0, beta=2.0, num_steps=33, )
 
         with pytest.raises(MissingControlParameterError, match="dia_alpha"):
             ham._check_control_parameters()
@@ -301,6 +392,7 @@ class TestCheckControlParameters:
 # ---------------------------------------------------------------------------
 # Flag reset cascade
 # ---------------------------------------------------------------------------
+
 
 class TestFlagResets:
     def test_changing_control_name_resets_eigenproblem(self, configured_ham):
@@ -371,8 +463,53 @@ class TestFlagResets:
 
 
 # ---------------------------------------------------------------------------
+# H_fun and partial_H_fun checkers
+# ---------------------------------------------------------------------------
+class TestHamiltonians:
+    def test_non_hermitian(self):
+        def hamiltonian(x: np.ndarray) -> np.ndarray:
+            return np.array([[0, 1j], [1j, 0]])
+
+        model = ControlModel(H_func=hamiltonian)
+        model.set_control("x")
+        with pytest.raises(ValidationError, match="return a Hermitian matrix"):
+            model.evaluate_hamiltonian(0.0)
+
+    def test_non_square(self):
+        def hamiltonian(x: np.ndarray) -> np.ndarray:
+            return np.array([[0, 1]])
+
+        model = ControlModel(H_func=hamiltonian)
+        model.set_control("x")
+        with pytest.raises(ValidationError, match="return a 2D square matrix"):
+            model.evaluate_hamiltonian(0.0)
+
+    def test_non_finite(self):
+        def hamiltonian(x: np.ndarray) -> np.ndarray:
+            return np.array([[np.inf, x], [x, 0]])
+
+        model = ControlModel(H_func=hamiltonian)
+        model.set_control("x")
+        with pytest.raises(ValidationError, match="return a matrix with finite values"):
+            model.evaluate_hamiltonian(0.0)
+
+    def test_partial_dimension_mismatch(self):
+        def hamiltonian(x: np.ndarray) -> np.ndarray:
+            return np.array([[1, x], [x, 0]])
+
+        def partial_hamiltonian(x: np.ndarray) -> np.ndarray:
+            return np.array([[1, x, 0], [x, 0, 0], [0, 0, 0]])
+
+        model = ControlModel(H_func=hamiltonian, partial_H_func=partial_hamiltonian)
+        model.set_control("x")
+        with pytest.raises(ValidationError, match="return a matrix with the same shape as H_func"):
+            model._call_partial_hamiltonian(0.0)
+
+
+# ---------------------------------------------------------------------------
 # __str__ / __repr__
 # ---------------------------------------------------------------------------
+
 
 class TestStringRepresentations:
     def test_str_contains_control_name(self, configured_ham):
@@ -387,6 +524,7 @@ class TestStringRepresentations:
 # ---------------------------------------------------------------------------
 # solve_problem (integration-level)
 # ---------------------------------------------------------------------------
+
 
 class TestSolveProblem:
     def test_solve_problem_sets_all_flags(self, configured_ham):
@@ -511,6 +649,7 @@ class TestSolveProblem:
 # eigenenergies / control_pulse properties
 # ---------------------------------------------------------------------------
 
+
 class TestEigenGetters:
     def test_eigenenergies_property_triggers_eigenproblem_solve(self, configured_ham):
         assert configured_ham._flags["eigenproblem_solved"] is False
@@ -539,6 +678,7 @@ class TestEigenGetters:
 # ---------------------------------------------------------------------------
 # Property setters – None keeps previous value
 # ---------------------------------------------------------------------------
+
 
 class TestSetterNoneNoOp:
     def test_control_name_none_keeps_value(self, configured_ham):
@@ -570,6 +710,7 @@ class TestSetterNoneNoOp:
 # set_parameters – overwrite existing key
 # ---------------------------------------------------------------------------
 
+
 class TestSetParametersOverwrite:
     def test_overwrite_existing_key(self, bare_ham):
         bare_ham.set_parameters(delta=0.5)
@@ -586,6 +727,7 @@ class TestSetParametersOverwrite:
 # _solve_eigenproblem – caching
 # ---------------------------------------------------------------------------
 
+
 class TestSolveEigenproblemCaching:
     def test_eigenproblem_skips_when_flag_set(self, configured_ham):
         """Calling _solve_eigenproblem twice should reuse the cached result."""
@@ -601,6 +743,7 @@ class TestSolveEigenproblemCaching:
 # ---------------------------------------------------------------------------
 # _compute_metric_tensor
 # ---------------------------------------------------------------------------
+
 
 class TestComputeMetricTensor:
     def test_metric_tensor_populated(self, configured_ham):
@@ -621,29 +764,31 @@ class TestComputeMetricTensor:
 # Numerical vs analytical partial derivative
 # ---------------------------------------------------------------------------
 
+
 class TestNumericalPartialAccuracy:
     def test_numerical_partial_matches_analytical(self):
         """The numerical derivative should closely match the analytical one."""
         ham_num = ControlModel(lz_hamiltonian)
         ham_num.set_parameters(delta=0.5)
         ham_num.set_control(control_name="lam", pulse_initial=-5.0, pulse_final=5.0, initial_state=0, alpha=2.0,
-                            beta=2.0, num_steps=2 ** 8 + 1)
+                            beta=2.0, num_steps=2 ** 8 + 1, )
 
         ham_ana = ControlModel(lz_hamiltonian, partial_H_func=lz_partial)
         ham_ana.set_parameters(delta=0.5)
         ham_ana.set_control(control_name="lam", pulse_initial=-5.0, pulse_final=5.0, initial_state=0, alpha=2.0,
-                            beta=2.0, num_steps=2 ** 8 + 1)
+                            beta=2.0, num_steps=2 ** 8 + 1, )
 
         ham_num.solve_problem()
         ham_ana.solve_problem()
 
         np.testing.assert_allclose(ham_num._control_sol, ham_ana._control_sol, atol=1e-2,
-                                   err_msg="Numerical and analytical solutions should be close")
+                                   err_msg="Numerical and analytical solutions should be close", )
 
 
 # ---------------------------------------------------------------------------
 # control_sol monotonicity
 # ---------------------------------------------------------------------------
+
 
 class TestControlSolMonotonicity:
     def test_control_sol_monotonically_increasing(self, configured_ham):
@@ -656,6 +801,7 @@ class TestControlSolMonotonicity:
 # ---------------------------------------------------------------------------
 # plot_eigenvalues
 # ---------------------------------------------------------------------------
+
 
 class TestPlotEigenvalues:
     def test_plot_eigenvalues_creates_figure_and_lines(self, configured_ham):
@@ -727,6 +873,7 @@ class TestPlotEigenvalues:
 # ---------------------------------------------------------------------------
 # plot_metric_tensor
 # ---------------------------------------------------------------------------
+
 
 class TestPlotMetricTensor:
     def test_plot_metric_tensor_creates_figure_and_line(self, configured_ham):
@@ -831,6 +978,7 @@ class TestPlotMetricTensor:
 # solve_problem raises on missing parameters
 # ---------------------------------------------------------------------------
 
+
 class TestSolveProblemErrors:
     def test_solve_problem_raises_without_control(self, bare_ham):
         with pytest.raises(MissingControlParameterError, match="Missing control"):
@@ -850,6 +998,7 @@ class TestSolveProblemErrors:
 # _generate_summary content
 # ---------------------------------------------------------------------------
 
+
 class TestGenerateSummary:
     def test_summary_contains_set_indicators(self, configured_ham):
         summary = configured_ham._generate_summary()
@@ -868,6 +1017,7 @@ class TestGenerateSummary:
 # Test analytical results for Landau-Zener model
 # ---------------------------------------------------------------------------
 
+
 class TestLandauZenerAnalytical:
     def test_linear(self):
         """For the LZ model, the optimal control for n_+ = 0 is a linear ramp from pulse_initial to pulse_final."""
@@ -879,7 +1029,7 @@ class TestLandauZenerAnalytical:
 
         ham.set_parameters(delta=delta)
         ham.set_control(control_name="lam", pulse_initial=pulse_0, pulse_final=pulse_f, initial_state=0, alpha=0,
-                        beta=0, num_steps=2 ** 8 + 1)
+                        beta=0, num_steps=2 ** 8 + 1, )
         ham.solve_problem()
         s = ham._s
 
@@ -898,7 +1048,7 @@ class TestLandauZenerAnalytical:
 
         ham.set_parameters(delta=delta)
         ham.set_control(control_name="lam", pulse_initial=pulse_0, pulse_final=pulse_f, initial_state=0, alpha=1,
-                        beta=1, num_steps=2 ** 8 + 1)
+                        beta=1, num_steps=2 ** 8 + 1, )
         ham.solve_problem()
         s = ham._s
 
@@ -917,7 +1067,7 @@ class TestLandauZenerAnalytical:
 
         ham.set_parameters(delta=delta)
         ham.set_control(control_name="lam", pulse_initial=pulse_0, pulse_final=pulse_f, initial_state=0, alpha=2,
-                        beta=2, num_steps=2 ** 8 + 1)
+                        beta=2, num_steps=2 ** 8 + 1, )
         ham.solve_problem()
         s = ham._s
 
@@ -936,7 +1086,7 @@ class TestLandauZenerAnalytical:
 
         ham.set_parameters(delta=delta)
         ham.set_control(control_name="lam", pulse_initial=pulse_0, pulse_final=pulse_f, initial_state=0, alpha=3,
-                        beta=3, num_steps=2 ** 8 + 1)
+                        beta=3, num_steps=2 ** 8 + 1, )
         ham.solve_problem()
         s = ham._s
 
@@ -1009,7 +1159,8 @@ class TestSolveProblemErrorsExtended:
 
     def test_solve_ode_wraps_solver_signature_errors(self, configured_ham):
         configured_ham._solve_eigenproblem()
-        configured_ham._compute_metric_tensor()
+        config = configured_ham._check_control_parameters()
+        configured_ham._compute_metric_tensor(config)
 
         def bad_solver(fun, t_span, y0):
             return None
@@ -1023,7 +1174,8 @@ class TestSolveProblemErrorsExtended:
 
     def test_solve_ode_raises_on_unsuccessful_solver_result(self, configured_ham):
         configured_ham._solve_eigenproblem()
-        configured_ham._compute_metric_tensor()
+        config = configured_ham._check_control_parameters()
+        configured_ham._compute_metric_tensor(config)
 
         class FailedSolution:
             success = False
@@ -1038,7 +1190,8 @@ class TestSolveProblemErrorsExtended:
 
     def test_solve_ode_raises_on_unrecognized_solver_output(self, configured_ham):
         configured_ham._solve_eigenproblem()
-        configured_ham._compute_metric_tensor()
+        config = configured_ham._check_control_parameters()
+        configured_ham._compute_metric_tensor(config)
 
         class BadSolution:
             success = True
@@ -1070,6 +1223,6 @@ class TestDiabaticMetricPath:
         ham._flags["dia_list_computed"] = True
         ham._dia_list = np.array([[1]])
 
-        ham._solve_dia_list()
+        ham._solve_dia_list({})
 
         np.testing.assert_array_equal(ham._dia_list, np.array([[1]]))

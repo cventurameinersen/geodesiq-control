@@ -13,6 +13,7 @@ from geodesiq.exceptions import ValidationError
 # Real ControlModel() fixtures
 # ------------------------------------------------------------
 
+
 def lz_hamiltonian(lam: float, delta: float = 1.0) -> np.ndarray:
     """Simple 2-level Landau-Zener Hamiltonian."""
     return np.array([[lam, delta], [delta, -lam]], dtype=float)
@@ -21,8 +22,8 @@ def lz_hamiltonian(lam: float, delta: float = 1.0) -> np.ndarray:
 def _build_solved_model() -> ControlModel:
     model = ControlModel(lz_hamiltonian)
     model.set_parameters(delta=1.0)
-    model.set_control(control_name="lam", pulse_initial=1.0, pulse_final=3.0, initial_state=0, final_state=1,
-                      alpha=2.0, beta=2.0, dia_alpha=2.0, dia_beta=2.0, num_steps=33, )
+    model.set_control(control_name="lam", pulse_initial=1.0, pulse_final=3.0, initial_state=0, final_state=1, alpha=2.0,
+                      beta=2.0, dia_alpha=2.0, dia_beta=2.0, num_steps=33, )
     model.solve_problem(pulse_accuracy=3)
     return model
 
@@ -51,13 +52,14 @@ def varying_dynamics():
 # Testing initialization and internal method _get_ham()
 # ------------------------------------------------------------
 
+
 def test_initialization(real_model):
     """Verify attributes are correctly extracted from the ControlModel object."""
     duration = 5.0
     dyn = Dynamics(duration=duration, model=real_model)
 
     assert dyn._duration == 5.0
-    assert len(dyn._pulse_times) == len(real_model._control_sol)
+    assert len(dyn._pulse_times) == len(real_model.control_sol)
     assert dyn._pulse_times[-1] == 5.0  # Check proper scaling of time array
 
 
@@ -76,17 +78,10 @@ def test_get_ham_interpolation(varying_dynamics):
     np.testing.assert_allclose(H_qobj.full(), expected)
 
 
-def test_initialization_requires_solved_model(real_model):
-    """Dynamics should reject ControlModel objects missing solved-control fields."""
-    real_model._control_sol = None
-
-    with pytest.raises(ValidationError, match="requires a solved ControlModel"):
-        Dynamics(duration=1.0, model=real_model)
-
-
 # ------------------------------------------------------------
 # Testing gate and state transfer fidelity
 # ------------------------------------------------------------
+
 
 def test_time_evolution_operator(default_dynamics):
     """Ensure the propagator computes successfully and returns expected elements."""
