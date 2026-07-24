@@ -6,6 +6,25 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ## [Unreleased]
 
+### Removed
+
+- Duplicate code in verification of `filtered_pulse`.
+- Possibility to directly call `PulseControl`. Instead, use `ControlModel` to create a control model and then call
+  `ControlModel.pulse_control` to obtain the pulse control, and latter use the provided methods.
+- Access of private attributes of `ControlModel` in `Dynamics`.
+
+### Added
+
+- Validate `hamiltonian` and `partial_hamiltonian` for shape, values, ... .
+- Better comparison between previous and new `parameters` to check if the eigenproblem must be solved again.
+- `gitattributes` file to fix line endings as LF for all files.
+- `ControlModel.parameters` to obtain a read-only view of the parameters.
+
+### Fixed
+
+- Validation of parameters in `filtered_pulse`.
+- Modify Hatch to only include the source files in the package, not the tests and other files.
+
 ## [0.1.1] - 2026-07-10
 
 ### Fixed
