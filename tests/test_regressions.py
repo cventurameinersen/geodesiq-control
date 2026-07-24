@@ -34,7 +34,7 @@ def test_numerical_derivative_supports_complex_hamiltonians():
                       num_steps=65, )
     model.solve_problem(pulse_accuracy=80)
 
-    assert model._flags['ode_solved']
+    assert model._flags["ode_solved"]
     assert np.all(np.isfinite(model.control_sol))
 
 
