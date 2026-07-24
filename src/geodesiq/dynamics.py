@@ -8,8 +8,7 @@ from .exceptions import ValidationError
 
 
 class Dynamics:
-
-    def __init__(self, duration: float, model: ControlModel, hbar: float = 1.):
+    def __init__(self, duration: float, model: ControlModel, hbar: float = 1.0):
         """
         Initialize the Dynamics object, which depends on an instance of the ControlModel class. This class deals with
         observables due to the time evolution of the pulsed ControlModel.
@@ -27,11 +26,10 @@ class Dynamics:
         # Attributes of the ControlModel instance
         self.evaluate_hamiltonian = model.evaluate_hamiltonian
         self._control_pulse: np.ndarray | None = (
-            np.asarray(model._control_pulse) if model._control_pulse is not None else None)
-        self._control_sol: np.ndarray | None = (
-            np.asarray(model._control_sol) if model._control_sol is not None else None)
-        self._initial_state: int | None = model._initial_state
-        self._final_state: int | None = model._final_state
+            np.asarray(model.control_pulse) if model.control_pulse is not None else None)
+        self._control_sol: np.ndarray | None = np.asarray(model.control_sol) if model.control_sol is not None else None
+        self._initial_state: int | None = model.initial_state
+        self._final_state: int | None = model.final_state
 
         if not isinstance(hbar, (int, float, np.integer, np.floating)) or isinstance(hbar, bool):
             raise ValidationError("hbar must be a finite positive number.")
@@ -43,13 +41,11 @@ class Dynamics:
             raise ValidationError("hbar must be a finite positive number.")
         self._hbar: float = hbar
 
-        if self._control_pulse is None or self._control_sol is None:
-            raise ValidationError(
-                "Dynamics requires a solved ControlModel with control pulse, control solution and control name set.")
-
         self._control_pulse = np.asarray(self._control_pulse, dtype=float)
         self._control_sol = np.asarray(self._control_sol, dtype=float)
 
+        if duration <= 0:
+            raise ValidationError("The duration must be larger than 0.")
         self._duration = duration
         self._pulse_times: np.ndarray = duration * np.linspace(0, 1, len(self._control_sol))
 
@@ -62,8 +58,8 @@ class Dynamics:
         """
         Construct the time-dependent ControlModel using QuTiP Qobj
         """
-        pulse_times: list[float] = np.asarray(self._pulse_times, dtype=float).tolist()
-        control_sol: list[float] = np.asarray(self._control_sol, dtype=float).tolist()
+        pulse_times: np.ndarray = np.asarray(self._pulse_times, dtype=float).tolist()
+        control_sol: np.ndarray = np.asarray(self._control_sol, dtype=float).tolist()
         control_val_t = float(np.interp(t, pulse_times, control_sol))
 
         return qt.Qobj(self.evaluate_hamiltonian(control_val_t)) / self._hbar
@@ -72,7 +68,7 @@ class Dynamics:
         """
         Compute the time evolution operator using the pulse ControlModel.
         """
-        pulse_times: list[float] = np.asarray(self._pulse_times, dtype=float).tolist()
+        pulse_times: np.ndarray = np.asarray(self._pulse_times, dtype=float).tolist()
         propagator = qt.propagator(self._get_ham, pulse_times)
         if isinstance(propagator, list):
             return propagator
@@ -80,7 +76,7 @@ class Dynamics:
 
     def state_fidelity(self, initial_state: Optional[np.ndarray | int | qt.Qobj] = None,
                        final_state: Optional[np.ndarray | int | qt.Qobj] = None,
-                       c_ops: Optional[List[qt.Qobj] | List[np.ndarray]] = None) -> float:
+                       c_ops: Optional[List[qt.Qobj] | List[np.ndarray]] = None, ) -> float:
         """
         Compute the state transfer fidelity with Lindblad master equation. Depending on whether initial/final states are
         explicitly given, then the time evolution is constructed. If integers of None are given then eigenstate
@@ -134,14 +130,14 @@ class Dynamics:
                 "Initial and final states must be either integers, numpy arrays with correct dimensions or Qobj "
                 "instances.")
 
-        options = {'store_final_state': True, 'store_states': False}
+        options = {"store_final_state": True, "store_states": False}
 
         result = qt.mesolve(self._get_ham, psi_init, pulse_times, c_ops=c_ops, options=options)
         psi_f = result.final_state
         if psi_f is None:
             raise ValidationError("Time evolution did not return a final state.")
 
-        state_fidelity = qt.fidelity(psi_target, psi_f) ** 2
+        state_fidelity: float = qt.fidelity(psi_target, psi_f) ** 2
 
         return state_fidelity
 
